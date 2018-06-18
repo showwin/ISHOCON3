@@ -1,0 +1,19 @@
+version: '3.0'
+services:
+  app:
+    image: showwin/ishocon3_app:0.1.0
+    command: /docker/start_app.sh
+    volumes:
+      - storage_app:/var/lib/mysql
+      - ./webapp:/home/ishocon/webapp
+    ports:
+      - "3000:80"
+
+  storage_app:
+    image: busybox
+    volumes:
+      - /var/lib/mysql
+
+
+volumes:
+  storage_app:
