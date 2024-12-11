@@ -1,0 +1,18 @@
+version: "3"
+
+tasks:
+  # init:
+  #   cmds:
+  #     - go install github.com/sqldef/sqldef/cmd/mysqldef@latest
+  build:
+    cmds:
+      - docker compose -f compose-python.yml build
+    dir: ./development/
+  up:
+    cmds:
+      - docker compose -f compose-python.yml up -d
+    dir: ./development/
+  down:
+    cmds:
+      - docker compose -f compose-python.yml down -v --remove-orphans
+    dir: ./development/
