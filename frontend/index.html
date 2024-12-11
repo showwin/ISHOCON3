@@ -3,16 +3,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>電車チケット予約</title>
+  <title>新幹線チケット予約 - Ishokansen Reservation</title>
   <!-- Bootstrap v5.3 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
-  <header class="container my-4">
-    <h1 class="text-center">電車チケット予約</h1>
-  </header>
+  <!-- ヘッダー (ナビゲーションバー) -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+      <!-- ブランド部分 -->
+      <a class="navbar-brand d-flex align-items-center" href="#">
+        <span class="fs-5 fw-bold">Ishokansen Reservation</span>
+        <span class="ms-2 text-white-50" style="font-size: 0.9rem;">新幹線チケット予約</span>
+      </a>
+      <div class="d-flex ms-auto align-items-center">
+        <!-- 現在時刻表示用 -->
+        <span id="current-time-display" class="text-white me-3">--:--</span>
+        <!-- 初期化ボタンを挿入する予定のspan -->
+        <span id="initialize-button-container" class="me-3"></span>
+        <!-- ユーザ名表示 -->
+        <span class="text-white me-3">Taro</span>
+      </div>
+    </div>
+  </nav>
 
-  <div class="container mb-5">
+  <div class="container my-4">
     <section id="reservation-section" class="mb-5">
       <h2 class="mb-3">予約フォーム</h2>
       <form id="reservation-form" class="row g-3">
@@ -38,9 +55,9 @@
       </form>
     </section>
 
-    <section id="train-list-section">
+    <section id="train-list-section" class="mb-5">
       <h2 class="mb-3">直近発車の電車一覧</h2>
-      <table id="train-list-table" class="table table-striped table-bordered table-responsive">
+      <table id="train-list-table" class="table table-striped table-bordered table-responsive mb-4">
         <thead class="table-light">
           <tr>
             <th rowspan="2" class="align-middle">電車名</th>
@@ -48,63 +65,95 @@
             <th colspan="4" class="text-center">復路</th>
           </tr>
           <tr>
-            <th>Arena -> Bridge</th>
-            <th>Bridge -> Cave</th>
-            <th>Cave -> Dock</th>
-            <th>Dock -> Edge</th>
-            <th>Edge -> Dock</th>
-            <th>Dock -> Cave</th>
-            <th>Cave -> Bridge</th>
-            <th>Bridge -> Arena</th>
+            <th>A <i class="bi bi-arrow-right"></i> B</th>
+            <th>B <i class="bi bi-arrow-right"></i> C</th>
+            <th>C <i class="bi bi-arrow-right"></i> D</th>
+            <th>D <i class="bi bi-arrow-right"></i> E</th>
+            <th>E <i class="bi bi-arrow-right"></i> D</th>
+            <th>D <i class="bi bi-arrow-right"></i> C</th>
+            <th>C <i class="bi bi-arrow-right"></i> B</th>
+            <th>B <i class="bi bi-arrow-right"></i> A</th>
           </tr>
         </thead>
         <tbody id="train-list-tbody">
-          <!-- 動的に電車一覧を表示 -->
         </tbody>
       </table>
     </section>
+
+    <section id="purchased-tickets-section">
+      <h2 class="mb-3">購入済チケット一覧</h2>
+      <table id="purchased-tickets-table" class="table table-striped table-bordered table-responsive">
+        <thead class="table-light">
+          <tr>
+            <th>電車名</th>
+            <th>乗車駅</th>
+            <th>降車駅</th>
+            <th>出発時間</th>
+            <th>人数</th>
+            <th>金額</th>
+            <th>入場済み</th>
+            <th>返金</th>
+          </tr>
+        </thead>
+        <tbody id="purchased-tickets-tbody">
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- モーダル -->
+  <div class="modal fade" id="reservation-modal" tabindex="-1" aria-labelledby="reservationModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="reservationModalLabel">予約結果</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+        </div>
+        <div class="modal-body" id="reservation-modal-body">
+        </div>
+        <div class="modal-footer" id="reservation-modal-footer">
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
+    // メッセージ辞書（フロントエンド管理）
+    const messages = {
+      success: "以下の座席を確保しました:",
+      recommend: "指定の条件では席が確保できませんでした。代わりにこちらはいかがですか？",
+      fail: {
+        NO_SEAT_AVAILABLE: "指定の条件に当てはまるチケットはご用意できませんでした"
+      }
+    };
+
     async function fetchTrains() {
       const res = await fetch('/api/trains');
       const data = await res.json();
-      // data.trainsは以下のようなデータ構造を想定:
-      // "trains": [
-      //   {
-      //     "id": "T1",
-      //     "name": "はやぶさ1号",
-      //     "availability": {
-      //       "Arena->Bridge": "◯",
-      //       "Bridge->Cave": "△",
-      //       "Cave->Dock": "✗",
-      //       "Dock->Edge": "◯",
-      //       "Edge->Dock": "◯",
-      //       "Dock->Cave": "△",
-      //       "Cave->Bridge": "◯",
-      //       "Bridge->Arena": "✗"
-      //     }
-      //   },
-      //   ...
-      // ]
       return data.trains;
     }
 
     async function fetchStations() {
       const res = await fetch('/api/stations');
       const data = await res.json();
-      // "stations": [
-      //   { "id": "S1", "name": "Arena" },
-      //   { "id": "S2", "name": "Bridge" },
-      //   { "id": "S3", "name": "Cave" },
-      //   { "id": "S4", "name": "Dock" },
-      //   { "id": "S5", "name": "Edge" }
-      // ]
       return data.stations;
     }
+
+    async function fetchCurrentTime() {
+      const res = await fetch('/api/current_time');
+      const data = await res.json();
+      return data.current_time; // "HH:MM" 形式
+    }
+
+    let trains = [];
+    let stations = [];
+    let currentHours = 0;
+    let currentMinutes = 0;
+    let clockInterval = null;
+    let purchasedTickets = [];
 
     const trainSelect = document.getElementById('train-select');
     const fromStationSelect = document.getElementById('from-station-select');
@@ -112,17 +161,47 @@
     const trainListTbody = document.getElementById('train-list-tbody');
     const reserveButton = document.getElementById('reserve-button');
     const numPeopleInput = document.getElementById('num-people');
+    const currentTimeDisplay = document.getElementById('current-time-display');
+    const purchasedTicketsTbody = document.getElementById('purchased-tickets-tbody');
+    const reservationModal = new bootstrap.Modal(document.getElementById('reservation-modal'), {});
+    const initializeButtonContainer = document.getElementById('initialize-button-container');
 
-    let trains = [];
-    let stations = [];
+    const segmentMap = [
+      { key: 'Arena->Bridge', from: 'A', to: 'B' },
+      { key: 'Bridge->Cave', from: 'B', to: 'C' },
+      { key: 'Cave->Dock', from: 'C', to: 'D' },
+      { key: 'Dock->Edge', from: 'D', to: 'E' },
+      { key: 'Edge->Dock', from: 'E', to: 'D' },
+      { key: 'Dock->Cave', from: 'D', to: 'C' },
+      { key: 'Cave->Bridge', from: 'C', to: 'B' },
+      { key: 'Bridge->Arena', from: 'B', to: 'A' }
+    ];
+
+    const availabilityIcons = {
+      none: '✗',
+      few: '△',
+      lots: '◯'
+    };
 
     async function init() {
-      [trains, stations] = await Promise.all([fetchTrains(), fetchStations()]);
+      const [fetchedTrains, fetchedStations, fetchedCurrentTime] = await Promise.all([
+        fetchTrains(), fetchStations(), fetchCurrentTime()
+      ]);
+
+      trains = fetchedTrains;
+      stations = fetchedStations;
+
+      const [h, m] = fetchedCurrentTime.split(':').map(v => parseInt(v,10));
+      currentHours = h;
+      currentMinutes = m;
 
       renderTrainList(trains);
       renderTrainOptions(trains);
       renderStationOptions(stations, fromStationSelect);
       renderStationOptions(stations, toStationSelect);
+
+      updateCurrentTimeDisplay();
+      startClockSimulation();
     }
 
     function renderTrainList(trainData) {
@@ -133,20 +212,13 @@
         tdName.textContent = t.name;
         tr.appendChild(tdName);
 
-        const segments = [
-          'Arena->Bridge',
-          'Bridge->Cave',
-          'Cave->Dock',
-          'Dock->Edge',
-          'Edge->Dock',
-          'Dock->Cave',
-          'Cave->Bridge',
-          'Bridge->Arena'
-        ];
-
-        segments.forEach(seg => {
+        segmentMap.forEach(seg => {
           const td = document.createElement('td');
-          td.textContent = t.availability[seg] || '-';
+          const status = t.availability[seg.key] || 'none';
+          const icon = availabilityIcons[status] || '✗';
+
+          const departure = t.departure_times && t.departure_times[seg.key] ? t.departure_times[seg.key] : '--:--';
+          td.textContent = `${icon} (${departure})`;
           tr.appendChild(td);
         });
 
@@ -174,19 +246,238 @@
       });
     }
 
-    reserveButton.addEventListener('click', () => {
+    reserveButton.addEventListener('click', async () => {
       const selectedTrainId = trainSelect.value;
       const fromStationId = fromStationSelect.value;
       const toStationId = toStationSelect.value;
       const numPeople = parseInt(numPeopleInput.value, 10);
 
-      // ここで予約APIへPOSTする処理などが可能
-      console.log("予約ボタンが押されました。");
-      console.log("選択電車ID:", selectedTrainId);
-      console.log("乗車駅ID:", fromStationId);
-      console.log("降車駅ID:", toStationId);
-      console.log("人数:", numPeople);
+      // /api/reserve へPOST
+      const res = await fetch('/api/reserve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          train_id: selectedTrainId,
+          from_station_id: fromStationId,
+          to_station_id: toStationId,
+          num_people: numPeople
+        })
+      }).then(r=>r.json());
+
+      handleReservationResponse(res);
     });
+
+    function handleReservationResponse(res) {
+      const modalBody = document.getElementById('reservation-modal-body');
+      const modalFooter = document.getElementById('reservation-modal-footer');
+      modalBody.innerHTML = '';
+      modalFooter.innerHTML = '';
+
+      if (res.status === 'success') {
+        const info = res.reserved;
+        modalBody.innerHTML = `
+          <p>${messages.success}</p>
+          <p>電車名: ${info.train_name}</p>
+          <p>区間: ${info.from_station} -> ${info.to_station}</p>
+          <p>出発時間: ${info.departure_time}</p>
+          <p>座席: ${info.seats.join(', ')}</p>
+          <p>合計金額: ${info.total_price}円</p>
+        `;
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-secondary';
+        cancelBtn.textContent = 'キャンセル';
+        cancelBtn.setAttribute('data-bs-dismiss','modal');
+
+        const purchaseBtn = document.createElement('button');
+        purchaseBtn.className = 'btn btn-primary';
+        purchaseBtn.textContent = '購入';
+        purchaseBtn.addEventListener('click', async () => {
+          await purchaseTicketAPI(info);
+          reservationModal.hide();
+        });
+
+        modalFooter.appendChild(cancelBtn);
+        modalFooter.appendChild(purchaseBtn);
+
+      } else if (res.status === 'recommend') {
+        const info = res.recommend;
+        modalBody.innerHTML = `
+          <p>${messages.recommend}</p>
+          <p>電車名: ${info.train_name}</p>
+          <p>区間: ${info.from_station} -> ${info.to_station}</p>
+          <p>出発時間: ${info.departure_time}</p>
+          <p>座席: ${info.seats.join(', ')}</p>
+          <p>合計金額: ${info.total_price}円</p>
+        `;
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn-secondary';
+        cancelBtn.textContent = 'キャンセル';
+        cancelBtn.setAttribute('data-bs-dismiss','modal');
+
+        const purchaseBtn = document.createElement('button');
+        purchaseBtn.className = 'btn btn-primary';
+        purchaseBtn.textContent = '購入';
+        purchaseBtn.addEventListener('click', async () => {
+          await purchaseTicketAPI(info);
+          reservationModal.hide();
+        });
+
+        modalFooter.appendChild(cancelBtn);
+        modalFooter.appendChild(purchaseBtn);
+
+      } else {
+        // fail
+        const ec = res.error_code || 'UNKNOWN';
+        const msg = messages.fail[ec] || 'エラーが発生しました';
+        modalBody.innerHTML = `<p>${msg}</p>`;
+        const okBtn = document.createElement('button');
+        okBtn.className = 'btn btn-primary';
+        okBtn.textContent = 'OK';
+        okBtn.setAttribute('data-bs-dismiss','modal');
+        modalFooter.appendChild(okBtn);
+      }
+
+      reservationModal.show();
+    }
+
+    async function purchaseTicketAPI(info) {
+      // /api/purchase へPOST
+      const purchaseRes = await fetch('/api/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          train_name: info.train_name,
+          from_station: info.from_station,
+          to_station: info.to_station,
+          departure_time: info.departure_time,
+          seats: info.seats,
+          total_price: info.total_price
+        })
+      }).then(r=>r.json());
+
+      // statusがsuccessなら購入済みチケット一覧に追加
+      if (purchaseRes.status === 'success') {
+        purchasedTickets.push({
+          train_name: info.train_name,
+          from_station: info.from_station,
+          to_station: info.to_station,
+          departure_time: info.departure_time,
+          num_people: info.seats.length,
+          total_price: info.total_price,
+          entered: false
+        });
+        renderPurchasedTickets();
+      } else {
+        console.error('購入処理でエラー:', purchaseRes);
+        // 必要に応じてエラーメッセージを表示
+      }
+    }
+
+    function renderPurchasedTickets() {
+      purchasedTicketsTbody.innerHTML = '';
+      purchasedTickets.forEach((ticket, index) => {
+        const tr = document.createElement('tr');
+
+        const tdTrain = document.createElement('td');
+        tdTrain.textContent = ticket.train_name;
+        tr.appendChild(tdTrain);
+
+        const tdFrom = document.createElement('td');
+        tdFrom.textContent = ticket.from_station;
+        tr.appendChild(tdFrom);
+
+        const tdTo = document.createElement('td');
+        tdTo.textContent = ticket.to_station;
+        tr.appendChild(tdTo);
+
+        const tdDeparture = document.createElement('td');
+        tdDeparture.textContent = ticket.departure_time;
+        tr.appendChild(tdDeparture);
+
+        const tdNum = document.createElement('td');
+        tdNum.textContent = String(ticket.num_people);
+        tr.appendChild(tdNum);
+
+        const tdPrice = document.createElement('td');
+        tdPrice.textContent = String(ticket.total_price);
+        tr.appendChild(tdPrice);
+
+        const tdEntered = document.createElement('td');
+        const enteredCheckbox = document.createElement('input');
+        enteredCheckbox.type = 'checkbox';
+        enteredCheckbox.checked = ticket.entered;
+        enteredCheckbox.disabled = true;
+        tdEntered.appendChild(enteredCheckbox);
+        tr.appendChild(tdEntered);
+
+        const tdRefund = document.createElement('td');
+        const refundBtn = document.createElement('button');
+        refundBtn.className = 'btn btn-danger btn-sm';
+        refundBtn.textContent = '返金';
+        refundBtn.addEventListener('click', () => {
+          console.log(`返金ボタンが押されました: ${ticket.train_name}`);
+          // TODO: /api/refund等をコールして、成功したら削除
+          purchasedTickets.splice(index,1);
+          renderPurchasedTickets();
+        });
+        tdRefund.appendChild(refundBtn);
+        tr.appendChild(tdRefund);
+
+        purchasedTicketsTbody.appendChild(tr);
+      });
+    }
+
+    function updateCurrentTimeDisplay() {
+      const hh = String(currentHours).padStart(2,'0');
+      const mm = String(currentMinutes).padStart(2,'0');
+      currentTimeDisplay.textContent = `${hh}:${mm}`;
+    }
+
+    function incrementTimeByOneMinute() {
+      // 24:00 に達したら止める
+      if (currentHours === 24 && currentMinutes === 0) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+        showInitializeButton();
+        return;
+      }
+
+      currentMinutes += 1;
+      if (currentMinutes >= 60) {
+        currentMinutes = 0;
+        currentHours += 1;
+        if (currentHours > 24) {
+          currentHours = 24;
+          currentMinutes = 0;
+        }
+      }
+
+      if (currentHours === 24 && currentMinutes === 0) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+        showInitializeButton();
+      }
+
+      updateCurrentTimeDisplay();
+    }
+
+    function startClockSimulation() {
+      // 100msごとに1分進める
+      clockInterval = setInterval(incrementTimeByOneMinute, 100);
+    }
+
+    function showInitializeButton() {
+      // 初期化ボタンを表示
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-warning btn-sm';
+      btn.textContent = '初期化';
+      btn.addEventListener('click', async () => {
+        await fetch('/api/initialize', {method: 'POST'});
+        location.reload();
+      });
+      initializeButtonContainer.appendChild(btn);
+    }
 
     document.addEventListener('DOMContentLoaded', init);
   </script>
