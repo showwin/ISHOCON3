@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ウェイティングルーム - Ishokansen Reservation</title>
+  <!-- Bootstrap v5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+
+  <style>
+    .train-line-container {
+      position: relative;
+      width: 400px;
+      height: 100px;
+      margin: 40px auto;
+    }
+
+    .destination {
+      position: absolute;
+      bottom: 0;
+      width: 40px;
+      text-align: center;
+      transform: translateX(-50%);
+      font-size: 0.9rem;
+      color: #333;
+    }
+
+    .destination .destination-icon {
+      font-size: 1.8rem;
+      color: #333;
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* 左:家, 中央:病院, 右:バッグを配置 */
+    .destination-house { left: 0%; }
+    .destination-hospital { left: 50%; }
+    .destination-bag { left: 100%; }
+
+    /* 線路 */
+    .train-line {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: #aaa;
+      z-index: -1;
+    }
+
+    /* 電車アイコン */
+    .train-icon {
+      position: absolute;
+      top: 50%;
+      /* アイコンの中央が配置点になるように-50%で調整 */
+      transform: translate(-50%, -50%);
+      font-size: 2rem;
+      color: #007bff;
+      animation: moveTrain 4s linear infinite;
+    }
+
+    @keyframes moveTrain {
+      0% {
+        left: 0%; /* 家の中央上 */
+      }
+      50% {
+        left: 100%; /* バッグの中央上 */
+      }
+      100% {
+        left: 0%; /* 家へ戻る */
+      }
+    }
+  </style>
+</head>
+<body class="bg-light">
+  <!-- ヘッダー -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+    <div class="container-fluid">
+      <a class="navbar-brand d-flex align-items-center" href="#">
+        <span class="fs-5 fw-bold">Ishokansen Reservation</span>
+        <span class="ms-2 text-white-50" style="font-size: 0.9rem;">新幹線チケット予約</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="container my-5 text-center">
+    <h2 class="mb-4">ウェイティングルーム</h2>
+    <div class="mb-4" id="waiting-message">しばらくお待ちください...</div>
+
+    <!-- 家、病院、バッグがあるライン(ラベルなし) -->
+    <div class="train-line-container">
+      <div class="train-line"></div>
+
+      <!-- 家 -->
+      <div class="destination destination-house">
+        <i class="bi bi-house-door destination-icon"></i>
+      </div>
+
+      <!-- 病院 -->
+      <div class="destination destination-hospital">
+        <i class="bi bi-hospital destination-icon"></i>
+      </div>
+
+      <!-- バッグ -->
+      <div class="destination destination-bag">
+        <i class="bi bi-bag destination-icon"></i>
+      </div>
+
+      <!-- 電車アイコン -->
+      <i class="bi bi-train-front train-icon"></i>
+    </div>
+
+    <p class="mt-3">順番待ち中です。もう少々お待ちください。</p>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    async function checkStatus() {
+      const res = await fetch('/api/waiting_status');
+      if (!res.ok) {
+        document.getElementById('waiting-message').textContent = 'エラーが発生しました。ページをリロードしてください。';
+        return;
+      }
+      const data = await res.json();
+
+      if (data.status === 'ready') {
+        location.href = '/index.html';
+      } else if (data.status === 'waiting') {
+        document.getElementById('waiting-message').textContent = 'まだ順番待ちです...';
+        setTimeout(checkStatus, data.next_check);
+      } else {
+        document.getElementById('waiting-message').textContent = 'エラーが発生しました。後ほど再度お試しください。';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      checkStatus();
+    });
+  </script>
+</body>
+</html>

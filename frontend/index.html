@@ -10,20 +10,16 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
-  <!-- ヘッダー (ナビゲーションバー) -->
+  <!-- ヘッダー -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
-      <!-- ブランド部分 -->
       <a class="navbar-brand d-flex align-items-center" href="#">
         <span class="fs-5 fw-bold">Ishokansen Reservation</span>
         <span class="ms-2 text-white-50" style="font-size: 0.9rem;">新幹線チケット予約</span>
       </a>
       <div class="d-flex ms-auto align-items-center">
-        <!-- 現在時刻表示用 -->
         <span id="current-time-display" class="text-white me-3">--:--</span>
-        <!-- 初期化ボタンを挿入する予定のspan -->
         <span id="initialize-button-container" class="me-3"></span>
-        <!-- ユーザ名表示 -->
         <span class="text-white me-3">Taro</span>
       </div>
     </div>
@@ -93,6 +89,7 @@
             <th>金額</th>
             <th>入場済み</th>
             <th>返金</th>
+            <th>入場</th>
           </tr>
         </thead>
         <tbody id="purchased-tickets-tbody">
@@ -101,7 +98,7 @@
     </section>
   </div>
 
-  <!-- モーダル -->
+  <!-- 予約結果モーダル -->
   <div class="modal fade" id="reservation-modal" tabindex="-1" aria-labelledby="reservationModalLabel" aria-hidden="true">
     <div class="modal-dialog">
       <div class="modal-content">
@@ -109,10 +106,22 @@
           <h5 class="modal-title" id="reservationModalLabel">予約結果</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
         </div>
-        <div class="modal-body" id="reservation-modal-body">
+        <div class="modal-body" id="reservation-modal-body"></div>
+        <div class="modal-footer" id="reservation-modal-footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 入場モーダル -->
+  <div class="modal fade" id="entrance-modal" tabindex="-1" aria-labelledby="entranceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="entranceModalLabel">入場確認</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
         </div>
-        <div class="modal-footer" id="reservation-modal-footer">
-        </div>
+        <div class="modal-body" id="entrance-modal-body"></div>
+        <div class="modal-footer" id="entrance-modal-footer"></div>
       </div>
     </div>
   </div>
@@ -121,7 +130,6 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    // メッセージ辞書（フロントエンド管理）
     const messages = {
       success: "以下の座席を確保しました:",
       recommend: "指定の条件では席が確保できませんでした。代わりにこちらはいかがですか？",
@@ -145,7 +153,15 @@
     async function fetchCurrentTime() {
       const res = await fetch('/api/current_time');
       const data = await res.json();
-      return data.current_time; // "HH:MM" 形式
+      return data.current_time;
+    }
+
+    async function fetchPurchasedTickets() {
+      // APIで購入済みチケット一覧取得
+      // 例: [{"train_name":"...","from_station":"...","to_station":"...","departure_time":"...","num_people":2,"total_price":20000,"entered":false,"entry_token":"...","qr_code_url":"..."}]
+      const res = await fetch('/api/purchased_tickets');
+      const data = await res.json();
+      return data.tickets;
     }
 
     let trains = [];
@@ -164,6 +180,7 @@
     const currentTimeDisplay = document.getElementById('current-time-display');
     const purchasedTicketsTbody = document.getElementById('purchased-tickets-tbody');
     const reservationModal = new bootstrap.Modal(document.getElementById('reservation-modal'), {});
+    const entranceModal = new bootstrap.Modal(document.getElementById('entrance-modal'), {});
     const initializeButtonContainer = document.getElementById('initialize-button-container');
 
     const segmentMap = [
@@ -184,12 +201,13 @@
     };
 
     async function init() {
-      const [fetchedTrains, fetchedStations, fetchedCurrentTime] = await Promise.all([
-        fetchTrains(), fetchStations(), fetchCurrentTime()
+      const [fetchedTrains, fetchedStations, fetchedCurrentTime, fetchedTickets] = await Promise.all([
+        fetchTrains(), fetchStations(), fetchCurrentTime(), fetchPurchasedTickets()
       ]);
 
       trains = fetchedTrains;
       stations = fetchedStations;
+      purchasedTickets = fetchedTickets; // APIから取得した購入済みチケットをセット
 
       const [h, m] = fetchedCurrentTime.split(':').map(v => parseInt(v,10));
       currentHours = h;
@@ -199,6 +217,8 @@
       renderTrainOptions(trains);
       renderStationOptions(stations, fromStationSelect);
       renderStationOptions(stations, toStationSelect);
+
+      renderPurchasedTickets();
 
       updateCurrentTimeDisplay();
       startClockSimulation();
@@ -252,7 +272,6 @@
       const toStationId = toStationSelect.value;
       const numPeople = parseInt(numPeopleInput.value, 10);
 
-      // /api/reserve へPOST
       const res = await fetch('/api/reserve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -273,43 +292,17 @@
       modalBody.innerHTML = '';
       modalFooter.innerHTML = '';
 
-      if (res.status === 'success') {
-        const info = res.reserved;
+      if (res.status === 'success' || res.status === 'recommend') {
+        const info = res.status === 'success' ? res.reserved : res.recommend;
+
         modalBody.innerHTML = `
-          <p>${messages.success}</p>
+          <p>${res.status === 'success' ? messages.success : messages.recommend}</p>
           <p>電車名: ${info.train_name}</p>
           <p>区間: ${info.from_station} -> ${info.to_station}</p>
           <p>出発時間: ${info.departure_time}</p>
           <p>座席: ${info.seats.join(', ')}</p>
           <p>合計金額: ${info.total_price}円</p>
         `;
-        const cancelBtn = document.createElement('button');
-        cancelBtn.className = 'btn btn-secondary';
-        cancelBtn.textContent = 'キャンセル';
-        cancelBtn.setAttribute('data-bs-dismiss','modal');
-
-        const purchaseBtn = document.createElement('button');
-        purchaseBtn.className = 'btn btn-primary';
-        purchaseBtn.textContent = '購入';
-        purchaseBtn.addEventListener('click', async () => {
-          await purchaseTicketAPI(info);
-          reservationModal.hide();
-        });
-
-        modalFooter.appendChild(cancelBtn);
-        modalFooter.appendChild(purchaseBtn);
-
-      } else if (res.status === 'recommend') {
-        const info = res.recommend;
-        modalBody.innerHTML = `
-          <p>${messages.recommend}</p>
-          <p>電車名: ${info.train_name}</p>
-          <p>区間: ${info.from_station} -> ${info.to_station}</p>
-          <p>出発時間: ${info.departure_time}</p>
-          <p>座席: ${info.seats.join(', ')}</p>
-          <p>合計金額: ${info.total_price}円</p>
-        `;
-
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'btn btn-secondary';
         cancelBtn.textContent = 'キャンセル';
@@ -342,22 +335,17 @@
     }
 
     async function purchaseTicketAPI(info) {
-      // /api/purchase へPOST
+      // infoには reservation_id が入っている前提
       const purchaseRes = await fetch('/api/purchase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          train_name: info.train_name,
-          from_station: info.from_station,
-          to_station: info.to_station,
-          departure_time: info.departure_time,
-          seats: info.seats,
-          total_price: info.total_price
+          reservation_id: info.reservation_id
         })
       }).then(r=>r.json());
 
-      // statusがsuccessなら購入済みチケット一覧に追加
       if (purchaseRes.status === 'success') {
+        // /api/purchaseからは情報返らない前提なのでinfoをそのまま使用
         purchasedTickets.push({
           train_name: info.train_name,
           from_station: info.from_station,
@@ -365,12 +353,13 @@
           departure_time: info.departure_time,
           num_people: info.seats.length,
           total_price: info.total_price,
-          entered: false
+          entered: false,
+          entry_token: info.entry_token,
+          qr_code_url: info.qr_code_url
         });
         renderPurchasedTickets();
       } else {
         console.error('購入処理でエラー:', purchaseRes);
-        // 必要に応じてエラーメッセージを表示
       }
     }
 
@@ -417,15 +406,88 @@
         refundBtn.textContent = '返金';
         refundBtn.addEventListener('click', () => {
           console.log(`返金ボタンが押されました: ${ticket.train_name}`);
-          // TODO: /api/refund等をコールして、成功したら削除
+          // 返金処理(API)が成功したら削除など
           purchasedTickets.splice(index,1);
           renderPurchasedTickets();
         });
         tdRefund.appendChild(refundBtn);
         tr.appendChild(tdRefund);
 
+        const tdEntrance = document.createElement('td');
+        const entranceBtn = document.createElement('button');
+        entranceBtn.className = 'btn btn-success btn-sm';
+        entranceBtn.textContent = '入場';
+        entranceBtn.disabled = ticket.entered;
+        entranceBtn.addEventListener('click', () => {
+          showEntryModal(ticket, index);
+        });
+        tdEntrance.appendChild(entranceBtn);
+        tr.appendChild(tdEntrance);
+
         purchasedTicketsTbody.appendChild(tr);
       });
+    }
+
+    function showEntryModal(ticket, index) {
+      const entranceModalBody = document.getElementById('entrance-modal-body');
+      const entranceModalFooter = document.getElementById('entrance-modal-footer');
+      entranceModalBody.innerHTML = '';
+      entranceModalFooter.innerHTML = '';
+
+      const img = document.createElement('img');
+      img.src = ticket.qr_code_url;
+      img.alt = 'Entry QR Code';
+      img.style.maxWidth = '100%';
+      entranceModalBody.appendChild(img);
+
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'text-danger mt-2';
+      entranceModalBody.appendChild(errorMsg);
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.setAttribute('data-bs-dismiss','modal');
+
+      const enterBtn = document.createElement('button');
+      enterBtn.className = 'btn btn-primary';
+      enterBtn.textContent = '入場する';
+      enterBtn.addEventListener('click', async () => {
+        const enterRes = await fetch('/api/entry', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ entry_token: ticket.entry_token })
+        }).then(r=>r.json());
+
+        if (enterRes.status === 'success') {
+          ticket.entered = true;
+          renderPurchasedTickets();
+          entranceModal.hide();
+        } else {
+          if (enterRes.error_code === 'TRAIN_DEPARTED') {
+            errorMsg.textContent = '出発時間を過ぎています。入場できません。';
+          } else {
+            errorMsg.textContent = '入場に失敗しました。後ほどお試しください。';
+          }
+        }
+      });
+
+      entranceModalFooter.appendChild(cancelBtn);
+      entranceModalFooter.appendChild(enterBtn);
+
+      entranceModal.show();
+    }
+
+    function showInitializeButton() {
+      initializeButtonContainer.innerHTML = '';
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-warning btn-sm';
+      btn.textContent = '初期化';
+      btn.addEventListener('click', async () => {
+        await fetch('/api/initialize', {method: 'POST'});
+        location.reload();
+      });
+      initializeButtonContainer.appendChild(btn);
     }
 
     function updateCurrentTimeDisplay() {
@@ -435,11 +497,7 @@
     }
 
     function incrementTimeByOneMinute() {
-      // 24:00 に達したら止める
       if (currentHours === 24 && currentMinutes === 0) {
-        clearInterval(clockInterval);
-        clockInterval = null;
-        showInitializeButton();
         return;
       }
 
@@ -463,20 +521,7 @@
     }
 
     function startClockSimulation() {
-      // 100msごとに1分進める
       clockInterval = setInterval(incrementTimeByOneMinute, 100);
-    }
-
-    function showInitializeButton() {
-      // 初期化ボタンを表示
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-warning btn-sm';
-      btn.textContent = '初期化';
-      btn.addEventListener('click', async () => {
-        await fetch('/api/initialize', {method: 'POST'});
-        location.reload();
-      });
-      initializeButtonContainer.appendChild(btn);
     }
 
     document.addEventListener('DOMContentLoaded', init);
