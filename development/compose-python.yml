@@ -4,7 +4,7 @@ services:
     container_name: nginx
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      # - ../frontend/build/client:/home/ishocon/webapp/public:ro
+      - ../frontend/:/home/ishocon/webapp/public:ro
     ports:
       - "8080:80"
     depends_on:

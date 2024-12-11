@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>電車チケット予約</title>
+  <!-- Bootstrap v5.3 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <header class="container my-4">
+    <h1 class="text-center">電車チケット予約</h1>
+  </header>
+
+  <div class="container mb-5">
+    <section id="reservation-section" class="mb-5">
+      <h2 class="mb-3">予約フォーム</h2>
+      <form id="reservation-form" class="row g-3">
+        <div class="col-md-3">
+          <label for="train-select" class="form-label">電車</label>
+          <select id="train-select" class="form-select"></select>
+        </div>
+        <div class="col-md-3">
+          <label for="from-station-select" class="form-label">乗車駅</label>
+          <select id="from-station-select" class="form-select"></select>
+        </div>
+        <div class="col-md-3">
+          <label for="to-station-select" class="form-label">降車駅</label>
+          <select id="to-station-select" class="form-select"></select>
+        </div>
+        <div class="col-md-2">
+          <label for="num-people" class="form-label">人数</label>
+          <input type="number" id="num-people" class="form-control" min="1" value="1"/>
+        </div>
+        <div class="col-md-1 d-flex align-items-end">
+          <button type="button" id="reserve-button" class="btn btn-primary w-100">予約</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="train-list-section">
+      <h2 class="mb-3">直近発車の電車一覧</h2>
+      <table id="train-list-table" class="table table-striped table-bordered table-responsive">
+        <thead class="table-light">
+          <tr>
+            <th rowspan="2" class="align-middle">電車名</th>
+            <th colspan="4" class="text-center">往路</th>
+            <th colspan="4" class="text-center">復路</th>
+          </tr>
+          <tr>
+            <th>Arena -> Bridge</th>
+            <th>Bridge -> Cave</th>
+            <th>Cave -> Dock</th>
+            <th>Dock -> Edge</th>
+            <th>Edge -> Dock</th>
+            <th>Dock -> Cave</th>
+            <th>Cave -> Bridge</th>
+            <th>Bridge -> Arena</th>
+          </tr>
+        </thead>
+        <tbody id="train-list-tbody">
+          <!-- 動的に電車一覧を表示 -->
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    async function fetchTrains() {
+      const res = await fetch('/api/trains');
+      const data = await res.json();
+      // data.trainsは以下のようなデータ構造を想定:
+      // "trains": [
+      //   {
+      //     "id": "T1",
+      //     "name": "はやぶさ1号",
+      //     "availability": {
+      //       "Arena->Bridge": "◯",
+      //       "Bridge->Cave": "△",
+      //       "Cave->Dock": "✗",
+      //       "Dock->Edge": "◯",
+      //       "Edge->Dock": "◯",
+      //       "Dock->Cave": "△",
+      //       "Cave->Bridge": "◯",
+      //       "Bridge->Arena": "✗"
+      //     }
+      //   },
+      //   ...
+      // ]
+      return data.trains;
+    }
+
+    async function fetchStations() {
+      const res = await fetch('/api/stations');
+      const data = await res.json();
+      // "stations": [
+      //   { "id": "S1", "name": "Arena" },
+      //   { "id": "S2", "name": "Bridge" },
+      //   { "id": "S3", "name": "Cave" },
+      //   { "id": "S4", "name": "Dock" },
+      //   { "id": "S5", "name": "Edge" }
+      // ]
+      return data.stations;
+    }
+
+    const trainSelect = document.getElementById('train-select');
+    const fromStationSelect = document.getElementById('from-station-select');
+    const toStationSelect = document.getElementById('to-station-select');
+    const trainListTbody = document.getElementById('train-list-tbody');
+    const reserveButton = document.getElementById('reserve-button');
+    const numPeopleInput = document.getElementById('num-people');
+
+    let trains = [];
+    let stations = [];
+
+    async function init() {
+      [trains, stations] = await Promise.all([fetchTrains(), fetchStations()]);
+
+      renderTrainList(trains);
+      renderTrainOptions(trains);
+      renderStationOptions(stations, fromStationSelect);
+      renderStationOptions(stations, toStationSelect);
+    }
+
+    function renderTrainList(trainData) {
+      trainListTbody.innerHTML = '';
+      trainData.forEach(t => {
+        const tr = document.createElement('tr');
+        const tdName = document.createElement('td');
+        tdName.textContent = t.name;
+        tr.appendChild(tdName);
+
+        const segments = [
+          'Arena->Bridge',
+          'Bridge->Cave',
+          'Cave->Dock',
+          'Dock->Edge',
+          'Edge->Dock',
+          'Dock->Cave',
+          'Cave->Bridge',
+          'Bridge->Arena'
+        ];
+
+        segments.forEach(seg => {
+          const td = document.createElement('td');
+          td.textContent = t.availability[seg] || '-';
+          tr.appendChild(td);
+        });
+
+        trainListTbody.appendChild(tr);
+      });
+    }
+
+    function renderTrainOptions(trainData) {
+      trainSelect.innerHTML = '';
+      trainData.forEach(t => {
+        const option = document.createElement('option');
+        option.value = t.id;
+        option.textContent = t.name;
+        trainSelect.appendChild(option);
+      });
+    }
+
+    function renderStationOptions(stationData, selectEl) {
+      selectEl.innerHTML = '';
+      stationData.forEach(s => {
+        const option = document.createElement('option');
+        option.value = s.id;
+        option.textContent = s.name;
+        selectEl.appendChild(option);
+      });
+    }
+
+    reserveButton.addEventListener('click', () => {
+      const selectedTrainId = trainSelect.value;
+      const fromStationId = fromStationSelect.value;
+      const toStationId = toStationSelect.value;
+      const numPeople = parseInt(numPeopleInput.value, 10);
+
+      // ここで予約APIへPOSTする処理などが可能
+      console.log("予約ボタンが押されました。");
+      console.log("選択電車ID:", selectedTrainId);
+      console.log("乗車駅ID:", fromStationId);
+      console.log("降車駅ID:", toStationId);
+      console.log("人数:", numPeople);
+    });
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
