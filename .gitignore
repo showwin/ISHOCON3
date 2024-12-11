@@ -163,3 +163,4 @@ cython_debug/
 
 # Custom
 development/mysql/*
+frontend/node_modules/*
