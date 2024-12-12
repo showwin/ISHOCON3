@@ -31,7 +31,6 @@ services:
     environment:
       ENV: local-dev
       MYSQL_DATABASE: ishocon3
-      MYSQL_USER: ishocon
       MYSQL_ROOT_PASSWORD: ishocon
     ports:
       - 3306:3306

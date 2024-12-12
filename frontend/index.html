@@ -498,6 +498,9 @@
 
     function incrementTimeByOneMinute() {
       if (currentHours === 24 && currentMinutes === 0) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+        showInitializeButton();
         return;
       }
 
@@ -509,12 +512,6 @@
           currentHours = 24;
           currentMinutes = 0;
         }
-      }
-
-      if (currentHours === 24 && currentMinutes === 0) {
-        clearInterval(clockInterval);
-        clockInterval = null;
-        showInitializeButton();
       }
 
       updateCurrentTimeDisplay();

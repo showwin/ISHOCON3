@@ -1,20 +1,59 @@
+import subprocess
 import random
+from datetime import datetime
+from http import HTTPStatus
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import text
+
+from .models import StationModel, SettingModel
+from .sql import engine
 
 app = FastAPI()
 
-@app.get("/")
-def hello():
-    return {"Hello": "World"}
+class PostInitializeResponse(BaseModel):
+    language: str
 
 @app.post("/api/initialize")
-def post_initialize():
-    return {"status": "success", "language": "Python"}
+def post_initialize() -> PostInitializeResponse:
+    result = subprocess.run(
+        "/home/ishocon/webapp/sql/init.sh", stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
+    if result.returncode != 0:
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initialize: {result.stdout.decode()}",
+        )
+
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM settings"))
+        conn.execute(text("INSERT INTO settings values ()"))
+
+    return PostInitializeResponse(language="python")
+
+def get_application_clock(initialized_at: datetime) -> str:
+    time_passed = datetime.now() - initialized_at
+    # この世界では1秒が10分に相当する
+    # 24:00で世界が止まる
+    hours = min(time_passed.seconds // 6, 24)
+    minutes = time_passed.seconds % 6 * 10 if hours < 24 else 0
+    return f"{hours:02d}:{minutes:02d}"
+
+class CurrentTimeResponse(BaseModel):
+    current_time: str
 
 @app.get("/api/current_time")
 def get_current_time():
-    return {"current_time": "23:00"}
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM settings LIMIT 1")
+        ).fetchone()
+    print(row)
+    setting = SettingModel.model_validate(row)
+    return CurrentTimeResponse(
+        current_time=get_application_clock(setting.initialized_at)
+    )
 
 @app.get("/api/trains")
 def get_trains():
@@ -70,15 +109,17 @@ def get_purchased_tickets():
         }
     ]}
 
+class StationsResponse(BaseModel):
+    stations: list[StationModel]
+
 @app.get("/api/stations")
-def get_stations():
-    return {"stations": [
-        {"id": 1, "name": "Arena"},
-        {"id": 2, "name": "Bridge"},
-        {"id": 3, "name": "Cave"},
-        {"id": 4, "name": "Dock"},
-        {"id": 5, "name": "Edge"},
-    ]}
+def get_stations() -> StationsResponse:
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT * FROM stations")
+        ).fetchall()
+    stations = [StationModel.model_validate(r) for r in rows]
+    return StationsResponse(stations=stations)
 
 
 @app.post("/api/reserve")
@@ -174,8 +215,7 @@ def get_admin_trains_sales():
         ]
     }
 
-# TODO: /api/admin/add_train に変更
-@app.post("/api/add_train")
+@app.post("/api/admin/add_train")
 def post_add_train():
     return {
         "status": "success",
