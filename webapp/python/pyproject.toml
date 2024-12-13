@@ -3,6 +3,7 @@ name = "ishocon3"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "bcrypt>=4.2.1",
     "fastapi>=0.115.5",
     "gunicorn>=23.0.0",
     "pymysql[rsa]>=1.1.1",

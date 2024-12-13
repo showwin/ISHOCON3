@@ -29,8 +29,8 @@
         <div id="error-message" class="alert alert-danger d-none"></div>
         <form id="login-form">
           <div class="mb-3">
-            <label for="username" class="form-label">ユーザ名</label>
-            <input type="text" class="form-control" id="username" required />
+            <label for="name" class="form-label">ユーザ名</label>
+            <input type="text" class="form-control" id="name" required />
           </div>
           <div class="mb-3">
             <label for="password" class="form-label">パスワード</label>
@@ -50,14 +50,14 @@
     const errorMessageDiv = document.getElementById('error-message');
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const username = document.getElementById('username').value;
+      const name = document.getElementById('name').value;
       const password = document.getElementById('password').value;
 
       // /api/loginにPOST
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({username, password})
+        body: JSON.stringify({name, password})
       });
 
       if (!res.ok) {

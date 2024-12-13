@@ -10,17 +10,23 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
-  <!-- ヘッダー -->
+  <!-- ヘッダー (ナビゲーションバー) -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
+      <!-- ブランド部分 -->
       <a class="navbar-brand d-flex align-items-center" href="#">
         <span class="fs-5 fw-bold">Ishokansen Reservation</span>
         <span class="ms-2 text-white-50" style="font-size: 0.9rem;">新幹線チケット予約</span>
       </a>
       <div class="d-flex ms-auto align-items-center">
+        <!-- 現在時刻表示用 -->
         <span id="current-time-display" class="text-white me-3">--:--</span>
+        <!-- 初期化ボタン表示場所 -->
         <span id="initialize-button-container" class="me-3"></span>
+        <!-- ユーザ名表示 -->
         <span class="text-white me-3">Taro</span>
+        <!-- ログアウトボタン追加 -->
+        <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
       </div>
     </div>
   </nav>
@@ -489,6 +495,22 @@
       });
       initializeButtonContainer.appendChild(btn);
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const logoutButton = document.getElementById('logout-button');
+      logoutButton?.addEventListener('click', async () => {
+        const res = await fetch('/api/logout', {
+          method: 'POST'
+        });
+        if (res.ok) {
+          // ログアウト成功時にログインページへ遷移
+          location.href = '/login.html';
+        } else {
+          console.error('ログアウトに失敗しました');
+          // 必要であればエラー表示など
+        }
+      });
+    });
 
     function updateCurrentTimeDisplay() {
       const hh = String(currentHours).padStart(2,'0');

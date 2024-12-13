@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
   `id` VARCHAR(36) NOT NULL COMMENT 'ユーザID',
   `name` varchar(30) NOT NULL COMMENT 'ユーザ名',
-  `password_encrypted` varchar(255) NOT NULL COMMENT 'パスワード',
+  `hashed_password` varchar(255) NOT NULL COMMENT 'パスワード',
   `salt` varchar(30) NOT NULL COMMENT 'ソルト',
   `is_admin` tinyint(1) NOT NULL DEFAULT 0 COMMENT '管理者フラグ',
   `global_payment_token` varchar(36) NOT NULL COMMENT '支払い用のトークン',

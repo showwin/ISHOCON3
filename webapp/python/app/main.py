@@ -1,19 +1,24 @@
+import bcrypt
 import subprocess
+from typing import Annotated
 import random
 from datetime import datetime
 from http import HTTPStatus
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from .models import StationModel, SettingModel
+from .models import Station, Setting, User
+from .middlewares import app_auth_middleware
 from .sql import engine
+from .utils import get_application_clock
 
 app = FastAPI()
 
 class PostInitializeResponse(BaseModel):
     language: str
+
 
 @app.post("/api/initialize")
 def post_initialize() -> PostInitializeResponse:
@@ -32,16 +37,10 @@ def post_initialize() -> PostInitializeResponse:
 
     return PostInitializeResponse(language="python")
 
-def get_application_clock(initialized_at: datetime) -> str:
-    time_passed = datetime.now() - initialized_at
-    # この世界では1秒が10分に相当する
-    # 24:00で世界が止まる
-    hours = min(time_passed.seconds // 6, 24)
-    minutes = time_passed.seconds % 6 * 10 if hours < 24 else 0
-    return f"{hours:02d}:{minutes:02d}"
 
 class CurrentTimeResponse(BaseModel):
     current_time: str
+
 
 @app.get("/api/current_time")
 def get_current_time():
@@ -50,10 +49,25 @@ def get_current_time():
             text("SELECT * FROM settings LIMIT 1")
         ).fetchone()
     print(row)
-    setting = SettingModel.model_validate(row)
+    setting = Setting.model_validate(row)
     return CurrentTimeResponse(
         current_time=get_application_clock(setting.initialized_at)
     )
+
+
+class StationsResponse(BaseModel):
+    stations: list[Station]
+
+
+@app.get("/api/stations")
+def get_stations() -> StationsResponse:
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT * FROM stations")
+        ).fetchall()
+    stations = [Station.model_validate(r) for r in rows]
+    return StationsResponse(stations=stations)
+
 
 @app.get("/api/trains")
 def get_trains():
@@ -109,19 +123,6 @@ def get_purchased_tickets():
         }
     ]}
 
-class StationsResponse(BaseModel):
-    stations: list[StationModel]
-
-@app.get("/api/stations")
-def get_stations() -> StationsResponse:
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text("SELECT * FROM stations")
-        ).fetchall()
-    stations = [StationModel.model_validate(r) for r in rows]
-    return StationsResponse(stations=stations)
-
-
 @app.post("/api/reserve")
 def post_reserve():
     r = random.randint(0, 10)
@@ -171,9 +172,37 @@ def post_entry():
         "status": "success",
     }
 
+class LoginRequest(BaseModel):
+    name: str
+    password: str
+
 ## ログインページ
 @app.post("/api/login")
-def post_login():
+def post_login(req: LoginRequest, response: Response):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM users WHERE name = :name"),
+            {"name": req.name}
+        ).fetchone()
+    user = User.model_validate(row)
+
+    hashed_password = bcrypt.hashpw(req.password.encode(), user.salt.encode()).decode()
+    if user.hashed_password != hashed_password:
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail="Invalid name or password"
+        )
+
+    response.set_cookie(key="user_name", value=user.name, httponly=True)
+
+    return {"status": "success", "user": {"id": user.id, "name": user.name, "is_admin": user.is_admin}}
+
+@app.post("/api/logout")
+def post_logout(
+    _: Annotated[User, Depends(app_auth_middleware)],
+    response: Response
+):
+    response.set_cookie(key="user_name", value=None, httponly=True)
     return {"status": "success"}
 
 
