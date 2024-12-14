@@ -19,8 +19,8 @@ CREATE TABLE `users` (
 
 DROP TABLE IF EXISTS `trains`;
 CREATE TABLE `trains` (
-  `id` int NOT NULL AUTO_INCREMENT COMMENT '電車ID',
-  `name` varchar(30) NOT NULL COMMENT '電車名',
+  `id` int NOT NULL AUTO_INCREMENT COMMENT '列車筐体ID',
+  `name` varchar(30) NOT NULL COMMENT '列車筐体名',
   `model_name` varchar(30) NOT NULL COMMENT 'モデル名',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`)
@@ -46,8 +46,8 @@ CREATE TABLE `stations` (
 
 DROP TABLE IF EXISTS `train_schedules`;
 CREATE TABLE `train_schedules` (
-  `id` int NOT NULL AUTO_INCREMENT COMMENT 'スケジュールID',
-  `train_id` varchar(10) NOT NULL COMMENT '電車ID',
+  `id` varchar(10) NOT NULL COMMENT '列車ID',
+  `train_id` varchar(10) NOT NULL COMMENT '列車筐体ID',
   `departure_at_station_a_to_b` varchar(5) NOT NULL COMMENT '駅A -> 駅Bの出発時刻',
   `departure_at_station_b_to_c` varchar(5) NOT NULL COMMENT '駅B -> 駅Cの出発時刻',
   `departure_at_station_c_to_d` varchar(5) NOT NULL COMMENT '駅C -> 駅Dの出発時刻',
@@ -63,8 +63,8 @@ CREATE TABLE `train_schedules` (
 DROP TABLE IF EXISTS `seat_row_reservations`;
 CREATE TABLE `seat_row_reservations` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '座席行状態ID',
-  `train_id` int NOT NULL COMMENT '電車ID',
-  `schedule_id` int NOT NULL COMMENT 'スケジュールID',
+  `train_id` int NOT NULL COMMENT '列車筐体ID',
+  `schedule_id` varchar(10)  NOT NULL COMMENT '列車ID',
   `station_from_id` varchar(1)  NOT NULL COMMENT '出発駅ID',
   `station_to_id` varchar(1) NOT NULL COMMENT '到着駅ID',
   `seat_row` int NOT NULL COMMENT '座席行番号',
@@ -80,7 +80,7 @@ CREATE TABLE `seat_row_reservations` (
 DROP TABLE IF EXISTS `reservation_locks`;
 CREATE TABLE `reservation_locks` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '予約ロックID',
-  `schedule_id` int NOT NULL COMMENT 'スケジュールID',
+  `schedule_id` varchar(10) NOT NULL COMMENT '列車ID',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6) COMMENT 'ロック作成日時',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -90,8 +90,8 @@ DROP TABLE IF EXISTS `reservations`;
 CREATE TABLE `reservations` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '予約ID',
   `user_id` varchar(36) NOT NULL COMMENT 'ユーザID',
-  `train_id` int NOT NULL COMMENT '電車ID',
-  `schedule_id` int NOT NULL COMMENT 'スケジュールID',
+  `train_id` int NOT NULL COMMENT '列車筐体ID',
+  `schedule_id` varchar(10) NOT NULL COMMENT '列車ID',
   `seat` varchar(4) NOT NULL COMMENT '座席 (例: "1-A", "12-E")',
   `entry_token` varchar(36) NOT NULL COMMENT '改札口入場トークン',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),

@@ -40,7 +40,7 @@ class Train(BaseModel):
 
 
 class TrainSchedule(BaseModel):
-    id: int
+    id: str
     train_id: int
     departure_at_station_a_to_b: str
     departure_at_station_b_to_c: str
@@ -55,7 +55,7 @@ class TrainSchedule(BaseModel):
 class SeatRowReservation(BaseModel):
     id: int
     train_id: int
-    schedule_id: int
+    schedule_id: str
     station_from_id: str
     station_to_id: str
     seat_row: int

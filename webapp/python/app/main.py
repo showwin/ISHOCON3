@@ -66,8 +66,8 @@ def get_stations() -> StationsResponse:
     return StationsResponse(stations=stations)
 
 
-@app.get("/api/trains")
-def get_trains():
+@app.get("/api/schedules")
+def get_schedules():
     current_time = get_application_clock()
     current_hour, current_minute = current_time.split(":")
     three_hours_later = f"{(int(current_hour) + 3):02d}:{current_minute}"
@@ -133,8 +133,7 @@ def get_trains():
             available_seats_between_stations[stations] = get_available_seats_sign(total_seats, available_seats)
 
         trains.append({
-            "id": train.id,
-            "name": train.name,
+            "id": schedule.id,
             "availability": {
                 "Arena->Bridge": available_seats_between_stations["A->B"],
                 "Bridge->Cave": available_seats_between_stations["B->C"],
@@ -157,7 +156,7 @@ def get_trains():
             }
         })
 
-    return {"trains": trains}
+    return {"schedules": trains}
 
 @app.get("/api/purchased_tickets")
 def get_purchased_tickets():
@@ -182,8 +181,21 @@ def get_purchased_tickets():
         }
     ]}
 
+class PostReserveRequest(BaseModel):
+    schedule_id: str
+    from_station_id: str
+    to_station_id: str
+    num_people: int
+
+class PostReserveResponse(BaseModel):
+    status: str
+    reserved: dict | None = None
+    recommend: dict | None = None
+    error_code: str | None = None
+
 @app.post("/api/reserve")
-def post_reserve():
+def post_reserve(req: PostReserveRequest) -> PostReserveResponse:
+
     r = random.randint(0, 10)
     if r < 5:
         return {
