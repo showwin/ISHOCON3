@@ -9,14 +9,15 @@ from fastapi import FastAPI, HTTPException, Response, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from .models import Station, Setting, User
+from .models import Station, User, TrainSchedule, Train, Setting
 from .middlewares import app_auth_middleware
 from .sql import engine
-from .utils import get_application_clock
+from .utils import get_application_clock, get_available_seats_sign
 
 app = FastAPI()
 
 class PostInitializeResponse(BaseModel):
+    initialized_at: datetime
     language: str
 
 
@@ -34,8 +35,10 @@ def post_initialize() -> PostInitializeResponse:
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM settings"))
         conn.execute(text("INSERT INTO settings values ()"))
+        row = conn.execute(text("SELECT * FROM settings LIMIT 1")).fetchone()
+    setting = Setting.model_validate(row)
 
-    return PostInitializeResponse(language="python")
+    return PostInitializeResponse(initialized_at=setting.initialized_at, language="python")
 
 
 class CurrentTimeResponse(BaseModel):
@@ -44,14 +47,8 @@ class CurrentTimeResponse(BaseModel):
 
 @app.get("/api/current_time")
 def get_current_time():
-    with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM settings LIMIT 1")
-        ).fetchone()
-    print(row)
-    setting = Setting.model_validate(row)
     return CurrentTimeResponse(
-        current_time=get_application_clock(setting.initialized_at)
+        current_time=get_application_clock()
     )
 
 
@@ -71,30 +68,92 @@ def get_stations() -> StationsResponse:
 
 @app.get("/api/trains")
 def get_trains():
+    current_time = get_application_clock()
+    current_hour, current_minute = current_time.split(":")
+    three_hours_later = f"{(int(current_hour) + 3):02d}:{current_minute}"
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+            SELECT *
+            FROM train_schedules
+            WHERE departure_at_station_a_to_b > :time
+            ORDER BY departure_at_station_a_to_b
+            LIMIT 10
+            """),
+            {"time": three_hours_later}
+        ).fetchall()
+    schedules = [TrainSchedule.model_validate(r) for r in rows]
+
+
     trains = []
-    for i in range(0, 10):
+    for schedule in schedules:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT * FROM trains WHERE id = :id"),
+                {"id": schedule.train_id},
+            ).fetchone()
+        train = Train.model_validate(row)
+
+        available_seats_between_stations = {
+            "A->B": 0,
+            "B->C": 0,
+            "C->D": 0,
+            "D->E": 0,
+            "E->D": 0,
+            "D->C": 0,
+            "C->B": 0,
+            "B->A": 0,
+        }
+        for stations in available_seats_between_stations.keys():
+            with engine.begin() as conn:
+                row = conn.execute(
+                    text("""
+                        SELECT SUM(a_is_available) + SUM(b_is_available) + SUM(c_is_available) + SUM(d_is_available) + SUM(e_is_available) AS available_seats
+                        FROM seat_row_reservations
+                        WHERE schedule_id = :schedule_id
+                        AND station_from_id = :station_from
+                        AND station_to_id = :station_to
+                    """),
+                    {"schedule_id": schedule.id, "station_from": stations.split("->")[0], "station_to": stations.split("->")[1]},
+                ).fetchone()
+                available_seats = row[0]
+
+                row = conn.execute(
+                    text("""
+                        SELECT seat_rows * seat_columns AS total_seats
+                        FROM trains
+                        INNER JOIN train_models
+                        ON trains.model_name = train_models.name
+                        WHERE id = :train_id;
+                    """),
+                    {"train_id": train.id},
+                ).fetchone()
+                total_seats = row[0]
+            available_seats_between_stations[stations] = get_available_seats_sign(total_seats, available_seats)
+
         trains.append({
-            "id": i + 1,
-            "name": "Train " + str(i + 1),
+            "id": train.id,
+            "name": train.name,
             "availability": {
-                "Arena->Bridge": "lots",
-                "Bridge->Cave": "few",
-                "Cave->Dock": "none",
-                "Dock->Edge": "lots",
-                "Edge->Dock": "lots",
-                "Dock->Cave": "few",
-                "Cave->Bridge": "lots",
-                "Bridge->Arena": "none"
+                "Arena->Bridge": available_seats_between_stations["A->B"],
+                "Bridge->Cave": available_seats_between_stations["B->C"],
+                "Cave->Dock": available_seats_between_stations["C->D"],
+                "Dock->Edge": available_seats_between_stations["D->E"],
+                "Edge->Dock": available_seats_between_stations["E->D"],
+                "Dock->Cave": available_seats_between_stations["D->C"],
+                "Cave->Bridge": available_seats_between_stations["C->B"],
+                "Bridge->Arena": available_seats_between_stations["B->A"],
             },
             "departure_times": {
-                "Arena->Bridge": "12:30",
-                "Bridge->Cave": "12:40",
-                "Cave->Dock": "12:50",
-                "Dock->Edge": "13:00",
-                "Edge->Dock": "13:10",
-                "Dock->Cave": "13:20",
-                "Cave->Bridge": "13:30",
-                "Bridge->Arena": "13:40"
+                "Arena->Bridge": schedule.departure_at_station_a_to_b,
+                "Bridge->Cave": schedule.departure_at_station_b_to_c,
+                "Cave->Dock": schedule.departure_at_station_c_to_d,
+                "Dock->Edge": schedule.departure_at_station_d_to_e,
+                "Edge->Dock": schedule.departure_at_station_e_to_d,
+                "Dock->Cave": schedule.departure_at_station_d_to_c,
+                "Cave->Bridge": schedule.departure_at_station_c_to_b,
+                "Bridge->Arena": schedule.departure_at_station_b_to_a
             }
         })
 
@@ -172,11 +231,13 @@ def post_entry():
         "status": "success",
     }
 
+
+## ログインページ
+
 class LoginRequest(BaseModel):
     name: str
     password: str
 
-## ログインページ
 @app.post("/api/login")
 def post_login(req: LoginRequest, response: Response):
     with engine.begin() as conn:
@@ -246,6 +307,48 @@ def get_admin_trains_sales():
 
 @app.post("/api/admin/add_train")
 def post_add_train():
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("select * from train_schedules"),
+        ).fetchall()
+
+    schedules = [TrainSchedule.model_validate(r) for r in rows]
+
+    with engine.begin() as conn:
+        for schedule in schedules:
+            row = conn.execute(
+                text("SELECT * FROM trains WHERE id = :id"),
+                {"id": schedule.train_id},
+            ).fetchone()
+            train = Train.model_validate(row)
+            row = conn.execute(
+                text("SELECT * FROM train_models WHERE name = :model_name"),
+                {"model_name": train.model_name},
+            ).fetchone()
+            train_model = TrainModel.model_validate(row)
+
+            for i in range(train_model.seat_rows):
+                stations_list = [["A", "B"], ["B", "C"], ["C", "D"], ["D", "E"], ["E", "D"], ["D", "C"], ["C", "B"], ["B", "A"]]
+                for stations in stations_list:
+                    conn.execute(
+                        text("""
+                            INSERT INTO seat_row_reservations
+                            (train_id, schedule_id, station_from_id, station_to_id, seat_row, a_is_available, b_is_available, c_is_available, d_is_available, e_is_available)
+                            VALUES (:train_id, :schedule_id, :station_from_id, :station_to_id, :seat_row, :a, :b, :c, :d, :e)
+                            """),
+                        {
+                            "train_id": schedule.train_id,
+                            "schedule_id": schedule.id,
+                            "station_from_id": stations[0],
+                            "station_to_id": stations[1],
+                            "seat_row": i + 1,
+                            "a": 1 if train_model.seat_columns >= 1 else 0,
+                            "b": 1 if train_model.seat_columns >= 2 else 0,
+                            "c": 1 if train_model.seat_columns >= 3 else 0,
+                            "d": 1 if train_model.seat_columns >= 4 else 0,
+                            "e": 1 if train_model.seat_columns >= 5 else 0,
+                        },
+                    )
     return {
         "status": "success",
         "train_name": "こまち5号",

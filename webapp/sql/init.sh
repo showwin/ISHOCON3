@@ -35,3 +35,9 @@ mysql -u"$ISHOCON_DB_USER" \
 		--host "$ISHOCON_DB_HOST" \
 		--port "$ISHOCON_DB_PORT" \
 		"$ISHOCON_DB_NAME" < 02-data.sql
+
+mysql -u"$ISHOCON_DB_USER" \
+		-p"$ISHOCON_DB_PASSWORD" \
+		--host "$ISHOCON_DB_HOST" \
+		--port "$ISHOCON_DB_PORT" \
+		"$ISHOCON_DB_NAME" < 03-dump.sql

@@ -21,7 +21,7 @@ DROP TABLE IF EXISTS `trains`;
 CREATE TABLE `trains` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '電車ID',
   `name` varchar(30) NOT NULL COMMENT '電車名',
-  `model_id` int NOT NULL COMMENT 'モデルID',
+  `model_name` varchar(30) NOT NULL COMMENT 'モデル名',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -29,11 +29,10 @@ CREATE TABLE `trains` (
 
 DROP TABLE IF EXISTS `train_models`;
 CREATE TABLE `train_models` (
-  `id` int NOT NULL AUTO_INCREMENT COMMENT '電車モデルID',
   `name` varchar(30) NOT NULL COMMENT 'モデル名',
   `seat_rows` int NOT NULL COMMENT '座席行数',
   `seat_columns` int NOT NULL COMMENT '座席列数(4列:A-D, 5列:A-E)',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 

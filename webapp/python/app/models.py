@@ -11,8 +11,10 @@ class Station(BaseModel):
     id: str
     name: str
 
+
 class Setting(BaseModel):
     initialized_at: datetime
+
 
 class User(BaseModel):
     id: str
@@ -23,3 +25,42 @@ class User(BaseModel):
     global_payment_token: str
     api_call_at: datetime | None
     created_at: datetime
+
+
+class TrainModel(BaseModel):
+    name: str
+    seat_rows: int
+    seat_columns: int
+
+
+class Train(BaseModel):
+    id: int
+    name: str
+    model_name: str
+
+
+class TrainSchedule(BaseModel):
+    id: int
+    train_id: int
+    departure_at_station_a_to_b: str
+    departure_at_station_b_to_c: str
+    departure_at_station_c_to_d: str
+    departure_at_station_d_to_e: str
+    departure_at_station_e_to_d: str
+    departure_at_station_d_to_c: str
+    departure_at_station_c_to_b: str
+    departure_at_station_b_to_a: str
+
+
+class SeatRowReservation(BaseModel):
+    id: int
+    train_id: int
+    schedule_id: int
+    station_from_id: str
+    station_to_id: str
+    seat_row: int
+    a_is_available: bool
+    b_is_available: bool
+    c_is_available: bool
+    d_is_available: bool
+    e_is_available: bool

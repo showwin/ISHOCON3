@@ -25,7 +25,7 @@
         <span id="initialize-button-container" class="me-3"></span>
         <!-- ユーザ名表示 -->
         <span class="text-white me-3">Taro</span>
-        <!-- ログアウトボタン追加 -->
+        <!-- ログアウトボタン -->
         <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
       </div>
     </div>
@@ -77,8 +77,7 @@
             <th>B <i class="bi bi-arrow-right"></i> A</th>
           </tr>
         </thead>
-        <tbody id="train-list-tbody">
-        </tbody>
+        <tbody id="train-list-tbody"></tbody>
       </table>
     </section>
 
@@ -228,10 +227,22 @@
 
       updateCurrentTimeDisplay();
       startClockSimulation();
+
+      // 定期的に電車一覧を更新(100msごと)
+      var updatedTrains
+      setInterval(async () => {
+        lastData = structuredClone(updatedTrains);
+        updatedTrains = await fetchTrains();
+        if (JSON.stringify(lastData) !== JSON.stringify(updatedTrains)) {
+          renderTrainList(updatedTrains);
+          renderTrainOptions(updatedTrains);
+        }
+      }, 100);
     }
 
     function renderTrainList(trainData) {
       trainListTbody.innerHTML = '';
+
       trainData.forEach(t => {
         const tr = document.createElement('tr');
         const tdName = document.createElement('td');
@@ -245,6 +256,7 @@
 
           const departure = t.departure_times && t.departure_times[seg.key] ? t.departure_times[seg.key] : '--:--';
           td.textContent = `${icon} (${departure})`;
+
           tr.appendChild(td);
         });
 
