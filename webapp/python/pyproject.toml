@@ -6,9 +6,11 @@ dependencies = [
     "bcrypt>=4.2.1",
     "fastapi>=0.115.5",
     "gunicorn>=23.0.0",
+    "ipython>=8.30.0",
     "pymysql[rsa]>=1.1.1",
     "python-ulid>=3.0.0",
     "sqlalchemy>=2.0.36",
+    "python-ulid>=3.0.0",
     "urllib3>=2.2.3",
     "uvicorn-worker>=0.2.0",
 ]

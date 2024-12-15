@@ -237,7 +237,7 @@
           renderSchedules(updatedSchedules);
           renderScheduleOptions(updatedSchedules);
         }
-      }, 100);
+      }, 1000);
     }
 
     function renderSchedules(scheduleData) {
@@ -312,14 +312,15 @@
 
       if (res.status === 'success' || res.status === 'recommend') {
         const info = res.status === 'success' ? res.reserved : res.recommend;
+        const discountMessage = info.is_discounted ? `(離れた席のため半額)` : '';
 
         modalBody.innerHTML = `
           <p>${res.status === 'success' ? messages.success : messages.recommend}</p>
-          <p>列車名: ${info.schedule_name}</p>
+          <p>列車名: ${info.schedule_id}</p>
           <p>区間: ${info.from_station} -> ${info.to_station}</p>
           <p>出発時間: ${info.departure_time}</p>
           <p>座席: ${info.seats.join(', ')}</p>
-          <p>合計金額: ${info.total_price}円</p>
+          <p>合計金額: ${info.total_price}円 ${discountMessage}</p>
         `;
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'btn btn-secondary';

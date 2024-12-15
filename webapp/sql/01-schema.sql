@@ -65,8 +65,8 @@ CREATE TABLE `seat_row_reservations` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '座席行状態ID',
   `train_id` int NOT NULL COMMENT '列車筐体ID',
   `schedule_id` varchar(10)  NOT NULL COMMENT '列車ID',
-  `station_from_id` varchar(1)  NOT NULL COMMENT '出発駅ID',
-  `station_to_id` varchar(1) NOT NULL COMMENT '到着駅ID',
+  `from_station_id` varchar(1)  NOT NULL COMMENT '出発駅ID',
+  `to_station_id` varchar(1) NOT NULL COMMENT '到着駅ID',
   `seat_row` int NOT NULL COMMENT '座席行番号',
   `a_is_available` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'A席の空き状況',
   `b_is_available` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'B席の空き状況',
@@ -79,21 +79,30 @@ CREATE TABLE `seat_row_reservations` (
 
 DROP TABLE IF EXISTS `reservation_locks`;
 CREATE TABLE `reservation_locks` (
-  `id` int NOT NULL AUTO_INCREMENT COMMENT '予約ロックID',
   `schedule_id` varchar(10) NOT NULL COMMENT '列車ID',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6) COMMENT 'ロック作成日時',
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`schedule_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 DROP TABLE IF EXISTS `reservations`;
 CREATE TABLE `reservations` (
-  `id` int NOT NULL AUTO_INCREMENT COMMENT '予約ID',
+  `id` varchar(26) NOT NULL COMMENT '予約ID',
   `user_id` varchar(36) NOT NULL COMMENT 'ユーザID',
-  `train_id` int NOT NULL COMMENT '列車筐体ID',
   `schedule_id` varchar(10) NOT NULL COMMENT '列車ID',
-  `seat` varchar(4) NOT NULL COMMENT '座席 (例: "1-A", "12-E")',
+  `from_station_id` varchar(1) NOT NULL COMMENT '出発駅ID',
+  `to_station_id` varchar(1) NOT NULL COMMENT '到着駅ID',
   `entry_token` varchar(36) NOT NULL COMMENT '改札口入場トークン',
+  `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+DROP TABLE IF EXISTS `reservation_seats`;
+CREATE TABLE `reservation_seats` (
+  `id` int NOT NULL AUTO_INCREMENT COMMENT '予約席ID',
+  `reservation_id` varchar(26) NOT NULL COMMENT '予約ID',
+  `seat` varchar(4) NOT NULL COMMENT '座席 (例: "1-A", "12-E")',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -102,7 +111,7 @@ CREATE TABLE `reservations` (
 DROP TABLE IF EXISTS `reservation_qr_images`;
 CREATE TABLE `reservation_qr_images` (
   `id` varchar(36) NOT NULL COMMENT 'QRコードID',
-  `reservation_id` int NOT NULL COMMENT '予約ID',
+  `reservation_id` varchar(26) NOT NULL COMMENT '予約ID',
   `image` longblob NOT NULL COMMENT 'QRコード画像',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -112,7 +121,7 @@ DROP TABLE IF EXISTS `payments`;
 CREATE TABLE `payments` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '支払いID',
   `user_id` varchar(36) NOT NULL COMMENT 'ユーザID',
-  `reservation_id` int NOT NULL COMMENT '予約ID',
+  `reservation_id` varchar(26) NOT NULL COMMENT '予約ID',
   `amount` int NOT NULL COMMENT '金額',
   `is_captured` tinyint(1) NOT NULL DEFAULT 0 COMMENT '支払い済フラグ',
   `is_refunded` tinyint(1) NOT NULL DEFAULT 0 COMMENT '返金済フラグ',
@@ -125,7 +134,7 @@ CREATE TABLE `payments` (
 DROP TABLE IF EXISTS `entries`;
 CREATE TABLE `entries` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '入場記録ID',
-  `reservation_id` int NOT NULL COMMENT '予約ID',
+  `reservation_id` varchar(26) NOT NULL COMMENT '予約ID',
   `entry_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6) COMMENT '入場日時',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

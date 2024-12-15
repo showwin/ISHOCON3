@@ -56,11 +56,26 @@ class SeatRowReservation(BaseModel):
     id: int
     train_id: int
     schedule_id: str
-    station_from_id: str
-    station_to_id: str
+    from_station_id: str
+    to_station_id: str
     seat_row: int
     a_is_available: bool
     b_is_available: bool
     c_is_available: bool
     d_is_available: bool
     e_is_available: bool
+
+class ReservationSeat(BaseModel):
+    id: int
+    reservation_id: str
+    seat: str
+    created_at: datetime
+
+class Reservation(BaseModel):
+    id: str
+    user_id: str
+    schedule_id: str
+    from_station_id: str
+    to_station_id: str
+    entry_token: str
+    created_at: datetime

@@ -1,5 +1,6 @@
 import bcrypt
 import subprocess
+from ulid import ULID
 from typing import Annotated
 import random
 from datetime import datetime
@@ -9,16 +10,17 @@ from fastapi import FastAPI, HTTPException, Response, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from .models import Station, User, TrainSchedule, Train, Setting
+from .models import Station, User, TrainSchedule, Train, Setting, Reservation
 from .middlewares import app_auth_middleware
 from .sql import engine
-from .utils import get_application_clock, get_available_seats_sign
+from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_time
 
 app = FastAPI()
 
 class PostInitializeResponse(BaseModel):
     initialized_at: datetime
-    language: str
+    app_language: str
+    ui_language: str
 
 
 @app.post("/api/initialize")
@@ -35,10 +37,14 @@ def post_initialize() -> PostInitializeResponse:
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM settings"))
         conn.execute(text("INSERT INTO settings values ()"))
-        row = conn.execute(text("SELECT * FROM settings LIMIT 1")).fetchone()
-    setting = Setting.model_validate(row)
+        row = conn.execute(text("SELECT * FROM settings")).fetchone()
+        setting = Setting.model_validate(row)
 
-    return PostInitializeResponse(initialized_at=setting.initialized_at, language="python")
+    return PostInitializeResponse(
+        initialized_at=setting.initialized_at,
+        app_language="python",
+        ui_language="ja"
+    )
 
 
 class CurrentTimeResponse(BaseModel):
@@ -112,10 +118,10 @@ def get_schedules():
                         SELECT SUM(a_is_available) + SUM(b_is_available) + SUM(c_is_available) + SUM(d_is_available) + SUM(e_is_available) AS available_seats
                         FROM seat_row_reservations
                         WHERE schedule_id = :schedule_id
-                        AND station_from_id = :station_from
-                        AND station_to_id = :station_to
+                        AND from_station_id = :from_station
+                        AND to_station_id = :to_station
                     """),
-                    {"schedule_id": schedule.id, "station_from": stations.split("->")[0], "station_to": stations.split("->")[1]},
+                    {"schedule_id": schedule.id, "from_station": stations.split("->")[0], "to_station": stations.split("->")[1]},
                 ).fetchone()
                 available_seats = row[0]
 
@@ -130,7 +136,7 @@ def get_schedules():
                     {"train_id": train.id},
                 ).fetchone()
                 total_seats = row[0]
-            available_seats_between_stations[stations] = get_available_seats_sign(total_seats, available_seats)
+            available_seats_between_stations[stations] = get_available_seats_sign(available_seats, total_seats)
 
         trains.append({
             "id": schedule.id,
@@ -187,50 +193,101 @@ class PostReserveRequest(BaseModel):
     to_station_id: str
     num_people: int
 
+class ReservationData(BaseModel):
+    reservation_id: str
+    schedule_id: str
+    from_station: str
+    to_station: str
+    departure_time: str
+    seats: list[str]
+    total_price: int
+    is_discounted: bool
+
 class PostReserveResponse(BaseModel):
     status: str
-    reserved: dict | None = None
-    recommend: dict | None = None
+    reserved: ReservationData | None = None
+    recommend: ReservationData | None = None
     error_code: str | None = None
 
 @app.post("/api/reserve")
-def post_reserve(req: PostReserveRequest) -> PostReserveResponse:
+def post_reserve(
+    user: Annotated[User, Depends(app_auth_middleware)],
+    req: PostReserveRequest
+) -> PostReserveResponse:
+    if not take_lock(req.schedule_id):
+        return {"status": "fail", "error_code": "LOCK_TIMEOUT"}
 
-    r = random.randint(0, 10)
-    if r < 5:
-        return {
-            "status": "success",
-            "reserved": {
-                "reservation_id": "UUID-1234-5678-91011",
-                "train_name": "こまち3号",
-                "from_station": "Arena",
-                "to_station": "Cave",
-                "departure_time": "12:30",
-                "seats": ["1-A", "1-B"],
-                "total_price": 20000,
-            }
-        }
-    elif r < 8:
-        return {
-            "status": "recommend",
-            "recommend": {
-                "reservation_id": "UUID-9876-5432-91011",
-                "train_name":"こまち3号",
-                "from_station": "Arena",
-                "to_station": "Cave",
-                "departure_time": "12:35",
-                "seats":["3-C","3-D"],
-                "total_price":18000
-            }
-        }
-    else:
-        return {
-            "status": "fail",
-            "error_code": "NO_SEAT_AVAILABLE"
-        }
+    reserved_schedule_id, seats = pick_seats(req.schedule_id, req.from_station_id, req.to_station_id, req.num_people)
+
+    if reserved_schedule_id is None:
+        return {"status": "fail", "error_code": "NO_SEAT_AVAILABLE"}
+
+    with engine.begin() as conn:
+        reservation_id = ULID()
+        conn.execute(
+            text("""
+                 INSERT INTO reservations (id, user_id, schedule_id, from_station_id, to_station_id, entry_token)
+                 VALUES (:id, :user_id, :schedule_id, :from_station_id, :to_station_id, :entry_token)
+                 """),
+            {"id": reservation_id, "user_id": user.id, "schedule_id": reserved_schedule_id, "from_station_id": req.from_station_id, "to_station_id": req.to_station_id, "entry_token": str(ULID())}
+        )
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM reservations WHERE id = :id"),
+            {"id": reservation_id}
+        ).fetchone()
+        reservation = Reservation.model_validate(row)
+
+        for seat in seats:
+            conn.execute(
+                text("""
+                    INSERT INTO reservation_seats (reservation_id, seat)
+                    VALUES (:reservation_id, :seat)
+                    """),
+                {"reservation_id": reservation.id, "seat": seat}
+            )
+
+    with engine.begin() as conn:
+        total_price, is_discounted = calculate_seat_price(reservation, seats)
+        conn.execute(
+            text("""
+                INSERT INTO payments (user_id, reservation_id, amount)
+                VALUES (:user_id, :reservation_id, :amount)
+                """),
+            {"user_id": user.id, "reservation_id": reservation.id, "amount": total_price}
+        )
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM stations WHERE id = :id"),
+            {"id": reservation.from_station_id}
+        ).fetchone()
+        from_station = Station.model_validate(row)
+        row = conn.execute(
+            text("SELECT * FROM stations WHERE id = :id"),
+            {"id": reservation.to_station_id}
+        ).fetchone()
+        to_station = Station.model_validate(row)
+
+    return PostReserveResponse(
+        status="success" if reservation.schedule_id == req.schedule_id else "recommend",
+        reserved=ReservationData(
+            reservation_id=reservation.id,
+            schedule_id=reservation.schedule_id,
+            from_station=from_station.name,
+            to_station=to_station.name,
+            departure_time=get_departure_time(reservation.schedule_id, req.from_station_id, req.to_station_id),
+            seats=seats,
+            total_price=total_price,
+            is_discounted=is_discounted
+        )
+    )
+
 
 @app.post("/api/purchase")
 def post_purchase():
+    # FIXME: レコメンドした場合はチケットが購入されない可能性があるので予約のロックが残ってしまうが、それが発生するケースは少ないと信じて一旦放置
+    # release_lock(schedule_id)
     return {
         "status": "success",
         "entry_token": "UUID-1234-5678-91011",
@@ -282,12 +339,12 @@ def post_logout(
 ## ウェイティングルーム
 @app.get("/api/waiting_status")
 def get_waiting_status():
-    r = random.randint(0, 50)
+    r = random.randint(0, 10)
     if r < 1:
         return {"status": "ready"}
     return {
         "status": "waiting",
-        "next_check": 1000
+        "next_check": 500
     }
 
 ## Admin API
@@ -345,14 +402,14 @@ def post_add_train():
                     conn.execute(
                         text("""
                             INSERT INTO seat_row_reservations
-                            (train_id, schedule_id, station_from_id, station_to_id, seat_row, a_is_available, b_is_available, c_is_available, d_is_available, e_is_available)
-                            VALUES (:train_id, :schedule_id, :station_from_id, :station_to_id, :seat_row, :a, :b, :c, :d, :e)
+                            (train_id, schedule_id, from_station_id, to_station_id, seat_row, a_is_available, b_is_available, c_is_available, d_is_available, e_is_available)
+                            VALUES (:train_id, :schedule_id, :from_station_id, :to_station_id, :seat_row, :a, :b, :c, :d, :e)
                             """),
                         {
                             "train_id": schedule.train_id,
                             "schedule_id": schedule.id,
-                            "station_from_id": stations[0],
-                            "station_to_id": stations[1],
+                            "from_station_id": stations[0],
+                            "to_station_id": stations[1],
                             "seat_row": i + 1,
                             "a": 1 if train_model.seat_columns >= 1 else 0,
                             "b": 1 if train_model.seat_columns >= 2 else 0,
