@@ -364,7 +364,6 @@
       }).then(r=>r.json());
 
       if (purchaseRes.status === 'success') {
-        // /api/purchaseからは情報返らない前提なのでinfoをそのまま使用
         purchasedTickets.push({
           schedule_id: info.schedule_id,
           from_station: info.from_station,
@@ -374,7 +373,7 @@
           total_price: info.total_price,
           entered: false,
           entry_token: info.entry_token,
-          qr_code_url: info.qr_code_url
+          qr_code_url: purchaseRes.qr_code_url
         });
         renderPurchasedTickets();
       } else {
@@ -453,11 +452,15 @@
       entranceModalBody.innerHTML = '';
       entranceModalFooter.innerHTML = '';
 
+      const imgWrapper = document.createElement('div');
+      imgWrapper.className = 'd-flex justify-content-center';
+
       const img = document.createElement('img');
       img.src = ticket.qr_code_url;
       img.alt = 'Entry QR Code';
       img.style.maxWidth = '100%';
-      entranceModalBody.appendChild(img);
+      imgWrapper.appendChild(img);
+      entranceModalBody.appendChild(imgWrapper);
 
       const errorMsg = document.createElement('div');
       errorMsg.className = 'text-danger mt-2';

@@ -1,6 +1,5 @@
 import bcrypt
 import subprocess
-from ulid import ULID
 from typing import Annotated
 import random
 from datetime import datetime
@@ -9,11 +8,12 @@ from http import HTTPStatus
 from fastapi import FastAPI, HTTPException, Response, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
+from ulid import ULID
 
-from .models import Station, User, TrainSchedule, Train, Setting, Reservation
+from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage
 from .middlewares import app_auth_middleware
 from .sql import engine
-from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_time
+from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_time, release_seat_reservation, generate_qr_image
 
 app = FastAPI()
 
@@ -283,16 +283,72 @@ def post_reserve(
         )
     )
 
+class PostPurchaseRequest(BaseModel):
+    reservation_id: str
+
+class PostPurchaseResponse(BaseModel):
+    status: str
+    entry_token: str
+    qr_code_url: str
 
 @app.post("/api/purchase")
-def post_purchase():
+def post_purchase(
+    user: Annotated[User, Depends(app_auth_middleware)],
+    req: PostPurchaseRequest
+) -> PostPurchaseResponse:
     # FIXME: レコメンドした場合はチケットが購入されない可能性があるので予約のロックが残ってしまうが、それが発生するケースは少ないと信じて一旦放置
-    # release_lock(schedule_id)
-    return {
-        "status": "success",
-        "entry_token": "UUID-1234-5678-91011",
-        "qr_code_url": "http://localhost/qr20241212060642863.png"
-    }
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM reservations WHERE id = :id"),
+            {"id": req.reservation_id}
+        ).fetchone()
+    reservation = Reservation.model_validate(row)
+
+    if reservation.user_id != user.id:
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail="Invalid reservation"
+        )
+
+    # TODO: Payment API をコールする
+    i = random.randint(0, 10)
+    payment_status = "success" if i > 1 else "failed"
+
+    release_lock(reservation.schedule_id)
+    if payment_status == "failed":
+        release_seat_reservation(reservation)
+
+    qr_image = generate_qr_image(reservation.entry_token)
+
+    image_id = str(ULID())
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO reservation_qr_images
+                VALUES (:id, :reservation_id, :qr_image)
+                """),
+            {"id": image_id, "reservation_id": reservation.id, "qr_image": qr_image}
+        )
+
+    return PostPurchaseResponse(
+        status=payment_status,
+        entry_token=reservation.entry_token if payment_status == "success" else "",
+        qr_code_url=f"http://localhost:8080/api/qr/{image_id}.png" if payment_status == "success" else ""
+    )
+
+@app.get("/api/qr/{qr_id}.png")
+def get_qr(qr_id: str):
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM reservation_qr_images WHERE id = :id"),
+            {"id": qr_id}
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND)
+    qr_image = ReservationQrImage.model_validate(row)
+    return Response(content=qr_image.image, media_type="image/png")
+
 
 @app.post("/api/entry")
 def post_entry():

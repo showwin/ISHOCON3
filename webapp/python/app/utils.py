@@ -2,7 +2,9 @@ from datetime import datetime
 from enum import Enum
 import time
 import math
+from io import BytesIO
 
+import qrcode
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -175,6 +177,7 @@ def get_stations_between(start: str, end: str) -> list[str]:
     end_index = stations[start_index:].index(end) + start_index
     return station_ids[start_index:end_index + 1]
 
+
 def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[int, bool]:
     distance = calculate_distance(reservation.from_station_id, reservation.to_station_id)
     num_seats = len(seats)
@@ -227,6 +230,7 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
 
     return full_price, False
 
+
 def calculate_distance(start, end):
     stations = ["A", "B", "C", "D", "E", "Dr", "Cr", "Br", "Ar"]
     if start > end:
@@ -235,6 +239,7 @@ def calculate_distance(start, end):
     start_index = stations.index(start)
     end_index = stations[start_index:].index(end) + start_index
     return end_index - start_index
+
 
 def get_departure_time(schedule_id: str, from_station_id: str, to_station_id: str) -> str:
     stations = get_stations_between(from_station_id, to_station_id)
@@ -249,3 +254,39 @@ def get_departure_time(schedule_id: str, from_station_id: str, to_station_id: st
         ).fetchone()
     schedule = TrainSchedule.model_validate(row)
     return getattr(schedule, f"departure_at_station_{from_station_id.lower()}_to_{next_station.lower()}")
+
+
+def release_seat_reservation(reservation: Reservation) -> None:
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT seat FROM reservation_seats WHERE reservation_id = :reservation_id
+                """),
+            {"reservation_id": reservation.id}
+        ).fetchall()
+        seats = [row[0] for row in rows]
+
+    # 今の実装では乗車区間は気にせずに全区間に対して席を取得しているので、全区間に対して席を解放する
+    for seat in seats:
+        seat_row, column = seat.split("-")
+        with engine.begin() as conn:
+            conn.execute(
+                text(f"""
+                    UPDATE seat_row_reservations SET {column}_is_available = 1 WHERE schedule_id = :schedule_id AND seat_row = :seat_row
+                    """),
+                {"schedule_id": reservation.schedule_id, "seat_row": seat_row}
+            )
+
+def generate_qr_image(entry_token: str) -> str:
+    qr = qrcode.QRCode(
+        version=2,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(entry_token)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    byte_io = BytesIO()
+    img.save(byte_io, format='PNG')
+    return byte_io.getvalue()

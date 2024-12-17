@@ -79,3 +79,8 @@ class Reservation(BaseModel):
     to_station_id: str
     entry_token: str
     created_at: datetime
+
+class ReservationQrImage(BaseModel):
+    id: str
+    reservation_id: str
+    image: bytes
