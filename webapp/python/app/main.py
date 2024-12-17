@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from ulid import ULID
 
-from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage
+from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment
 from .middlewares import app_auth_middleware
 from .sql import engine
 from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_time, release_seat_reservation, generate_qr_image
@@ -418,12 +418,44 @@ def post_refund(
     user: Annotated[User, Depends(app_auth_middleware)],
     req: PostRefundRequest
 ) -> PostRefundResponse:
-    # payments.is_captured を false にする
-    # payments.is_refunded を true にする
-    # seat_row_reservations を削除する
-    return {
-        "status": "success",
-    }
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM reservations WHERE id = :id"),
+            {"id": req.reservation_id}
+        ).fetchone()
+    reservation = Reservation.model_validate(row)
+
+    if reservation.user_id != user.id:
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail="Invalid reservation"
+        )
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM payments WHERE reservation_id = :reservation_id"),
+            {"reservation_id": reservation.id}
+        ).fetchone()
+    payment = Payment.model_validate(row)
+
+    if not payment.is_captured:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Not captured"
+        )
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("UPDATE payments SET is_captured = false, is_refunded = true WHERE reservation_id = :reservation_id"),
+            {"reservation_id": reservation.id}
+        )
+
+    if reservation.departure_at > get_application_clock():
+        release_seat_reservation(reservation)
+
+    return PostRefundResponse(
+        status="success"
+    )
 
 
 ## ログインページ

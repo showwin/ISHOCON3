@@ -85,3 +85,13 @@ class ReservationQrImage(BaseModel):
     id: str
     reservation_id: str
     image: bytes
+
+class Payment(BaseModel):
+    id: int
+    user_id: str
+    reservation_id: str
+    amount: int
+    is_captured: bool
+    is_refunded: bool
+    created_at: datetime
+    updated_at: datetime
