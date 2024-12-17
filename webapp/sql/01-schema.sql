@@ -92,6 +92,7 @@ CREATE TABLE `reservations` (
   `schedule_id` varchar(10) NOT NULL COMMENT '列車ID',
   `from_station_id` varchar(1) NOT NULL COMMENT '出発駅ID',
   `to_station_id` varchar(1) NOT NULL COMMENT '到着駅ID',
+  `departure_at` varchar(5) NOT NULL COMMENT '出発日時',
   `entry_token` varchar(36) NOT NULL COMMENT '改札口入場トークン',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`)

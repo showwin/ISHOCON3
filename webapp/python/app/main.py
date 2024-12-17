@@ -222,14 +222,23 @@ def post_reserve(
     if reserved_schedule_id is None:
         return {"status": "fail", "error_code": "NO_SEAT_AVAILABLE"}
 
+    departure_at = get_departure_time(reserved_schedule_id, req.from_station_id, req.to_station_id)
     with engine.begin() as conn:
         reservation_id = ULID()
         conn.execute(
             text("""
-                 INSERT INTO reservations (id, user_id, schedule_id, from_station_id, to_station_id, entry_token)
-                 VALUES (:id, :user_id, :schedule_id, :from_station_id, :to_station_id, :entry_token)
+                 INSERT INTO reservations (id, user_id, schedule_id, from_station_id, to_station_id, departure_at, entry_token)
+                 VALUES (:id, :user_id, :schedule_id, :from_station_id, :to_station_id, :departure_at, :entry_token)
                  """),
-            {"id": reservation_id, "user_id": user.id, "schedule_id": reserved_schedule_id, "from_station_id": req.from_station_id, "to_station_id": req.to_station_id, "entry_token": str(ULID())}
+            {
+                "id": reservation_id,
+                "user_id": user.id,
+                "schedule_id": reserved_schedule_id,
+                "from_station_id": req.from_station_id,
+                "to_station_id": req.to_station_id,
+                "departure_at": departure_at,
+                "entry_token": str(ULID())
+            }
         )
     with engine.begin() as conn:
         row = conn.execute(
@@ -276,7 +285,7 @@ def post_reserve(
             schedule_id=reservation.schedule_id,
             from_station=from_station.name,
             to_station=to_station.name,
-            departure_time=get_departure_time(reservation.schedule_id, req.from_station_id, req.to_station_id),
+            departure_time=reservation.departure_at,
             seats=seats,
             total_price=total_price,
             is_discounted=is_discounted
@@ -316,7 +325,13 @@ def post_purchase(
     payment_status = "success" if i > 1 else "failed"
 
     release_lock(reservation.schedule_id)
-    if payment_status == "failed":
+    if payment_status == "success":
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE payments SET is_captured = true WHERE reservation_id = :reservation_id"),
+                {"reservation_id": reservation.id}
+            )
+    else:
         release_seat_reservation(reservation)
 
     qr_image = generate_qr_image(reservation.entry_token)
@@ -350,8 +365,62 @@ def get_qr(qr_id: str):
     return Response(content=qr_image.image, media_type="image/png")
 
 
+class PostEntryRequest(BaseModel):
+    entry_token: str
+
+class PostEntryResponse(BaseModel):
+    status: str
+
 @app.post("/api/entry")
-def post_entry():
+def post_entry(
+    user: Annotated[User, Depends(app_auth_middleware)],
+    req: PostEntryRequest
+) -> PostEntryResponse:
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM reservations WHERE entry_token = :entry_token"),
+            {"entry_token": req.entry_token}
+        ).fetchone()
+    if row is None:
+        return HTTPException(status_code=HTTPStatus.NOT_FOUND)
+
+    reservation = Reservation.model_validate(row)
+
+    if reservation.user_id != user.id:
+        return HTTPException(status_code=HTTPStatus.UNAUTHORIZED)
+    # 列車の発車時間を過ぎていないことを確認
+    if reservation.departure_at < get_application_clock():
+        return PostEntryResponse(
+            status="TRAIN_DEPARTED",
+        )
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO entries (reservation_id)
+                VALUES (:reservation_id)
+                """),
+            {"reservation_id": reservation.id}
+        )
+    return PostEntryResponse(status="success")
+
+
+class PostRefundRequest(BaseModel):
+    reservation_id: str
+
+
+class PostRefundResponse(BaseModel):
+    status: str
+
+
+@app.post("/api/refund")
+def post_refund(
+    user: Annotated[User, Depends(app_auth_middleware)],
+    req: PostRefundRequest
+) -> PostRefundResponse:
+    # payments.is_captured を false にする
+    # payments.is_refunded を true にする
+    # seat_row_reservations を削除する
     return {
         "status": "success",
     }

@@ -19,13 +19,9 @@
         <span class="ms-2 text-white-50" style="font-size: 0.9rem;">新幹線チケット予約</span>
       </a>
       <div class="d-flex ms-auto align-items-center">
-        <!-- 現在時刻表示用 -->
         <span id="current-time-display" class="text-white me-3">--:--</span>
-        <!-- 初期化ボタン表示場所 -->
         <span id="initialize-button-container" class="me-3"></span>
-        <!-- ユーザ名表示 -->
         <span class="text-white me-3">Taro</span>
-        <!-- ログアウトボタン -->
         <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
       </div>
     </div>
@@ -118,6 +114,20 @@
   </div>
 
   <!-- 入場モーダル -->
+  <div class="modal fade" id="entrance-modal" tabindex="-1" aria-labelledby="entranceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="entranceModalLabel">入場確認</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+        </div>
+        <div class="modal-body" id="entrance-modal-body"></div>
+        <div class="modal-footer" id="entrance-modal-footer"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- モーダル（エントリ用＆返金確認用） -->
   <div class="modal fade" id="entrance-modal" tabindex="-1" aria-labelledby="entranceModalLabel" aria-hidden="true">
     <div class="modal-dialog">
       <div class="modal-content">
@@ -372,7 +382,8 @@
           num_people: info.seats.length,
           total_price: info.total_price,
           entered: false,
-          entry_token: info.entry_token,
+          reservation_id: info.reservation_id,
+          entry_token: purchaseRes.entry_token,
           qr_code_url: purchaseRes.qr_code_url
         });
         renderPurchasedTickets();
@@ -386,29 +397,15 @@
       purchasedTickets.forEach((ticket, index) => {
         const tr = document.createElement('tr');
 
-        const tdSchedule = document.createElement('td');
-        tdSchedule.textContent = ticket.schedule_id;
-        tr.appendChild(tdSchedule);
-
-        const tdFrom = document.createElement('td');
-        tdFrom.textContent = ticket.from_station;
-        tr.appendChild(tdFrom);
-
-        const tdTo = document.createElement('td');
-        tdTo.textContent = ticket.to_station;
-        tr.appendChild(tdTo);
-
-        const tdDeparture = document.createElement('td');
-        tdDeparture.textContent = ticket.departure_time;
-        tr.appendChild(tdDeparture);
-
-        const tdNum = document.createElement('td');
-        tdNum.textContent = String(ticket.num_people);
-        tr.appendChild(tdNum);
-
-        const tdPrice = document.createElement('td');
-        tdPrice.textContent = String(ticket.total_price);
-        tr.appendChild(tdPrice);
+        tr.innerHTML = `
+          <td>${ticket.schedule_id}</td>
+          <td>${ticket.from_station}</td>
+          <td>${ticket.to_station}</td>
+          <td>${ticket.departure_time}</td>
+          <td>${ticket.num_people}</td>
+          <td>${ticket.total_price}</td>
+          <td><input type="checkbox" disabled ${ticket.entered?'checked':''}></td>
+        `;
 
         const tdEntered = document.createElement('td');
         const enteredCheckbox = document.createElement('input');
@@ -423,10 +420,7 @@
         refundBtn.className = 'btn btn-danger btn-sm';
         refundBtn.textContent = '返金';
         refundBtn.addEventListener('click', () => {
-          console.log(`返金ボタンが押されました: ${ticket.schedule_id}`);
-          // 返金処理(API)が成功したら削除など
-          purchasedTickets.splice(index,1);
-          renderPurchasedTickets();
+          showRefundModal(ticket, index, "このチケットを返金しますか？");
         });
         tdRefund.appendChild(refundBtn);
         tr.appendChild(tdRefund);
@@ -446,7 +440,7 @@
       });
     }
 
-    function showEntryModal(ticket, index) {
+    function showEntryModal(ticket, ticketIndex) {
       const entranceModalBody = document.getElementById('entrance-modal-body');
       const entranceModalFooter = document.getElementById('entrance-modal-footer');
       entranceModalBody.innerHTML = '';
@@ -485,17 +479,61 @@
           ticket.entered = true;
           renderPurchasedTickets();
           entranceModal.hide();
+        } else if (enterRes.status === 'TRAIN_DEPARTED') {
+          entranceModal.hide();
+          // 続けてモーダルを表示できるように前のモーダルが消えたのを確認してから表示
+          const handler = () => {
+            entranceModal._element.removeEventListener('hidden.bs.modal', handler);
+            showRefundModal(ticket, ticketIndex, "列車の出発時間をすでに過ぎております。返金しますか？");
+          };
+          entranceModal._element.addEventListener('hidden.bs.modal', handler);
         } else {
-          if (enterRes.error_code === 'TRAIN_DEPARTED') {
-            errorMsg.textContent = '出発時間を過ぎています。入場できません。';
-          } else {
-            errorMsg.textContent = '入場に失敗しました。後ほどお試しください。';
-          }
+          errorMsg.textContent = '入場に失敗しました。後ほどお試しください。';
         }
       });
 
       entranceModalFooter.appendChild(cancelBtn);
       entranceModalFooter.appendChild(enterBtn);
+
+      entranceModal.show();
+    }
+
+    // 入場処理でエラーになった場合にも使うrefundモーダル表示関数
+    function showRefundModal(ticket, ticketIndex, message) {
+      const entranceModalBody = document.getElementById('entrance-modal-body');
+      const entranceModalFooter = document.getElementById('entrance-modal-footer');
+      if(!entranceModalBody || !entranceModalFooter)return;
+
+      entranceModalBody.innerHTML = `<p>${message}</p>`;
+      entranceModalFooter.innerHTML = '';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.setAttribute('data-bs-dismiss','modal');
+
+      const refundBtn = document.createElement('button');
+      refundBtn.className = 'btn btn-primary';
+      refundBtn.textContent = '返金';
+      refundBtn.addEventListener('click', async () => {
+        const res = await fetch('/api/refund', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ reservation_id: ticket.reservation_id })
+        });
+        if(res.ok) {
+          // 返金成功後チケット削除
+          purchasedTickets.splice(ticketIndex, 1);
+          renderPurchasedTickets();
+          entranceModal.hide();
+        } else {
+          // 返金失敗時の処理(必要なら)
+          console.error('返金失敗');
+        }
+      });
+
+      entranceModalFooter.appendChild(cancelBtn);
+      entranceModalFooter.appendChild(refundBtn);
 
       entranceModal.show();
     }

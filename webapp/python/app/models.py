@@ -77,6 +77,7 @@ class Reservation(BaseModel):
     schedule_id: str
     from_station_id: str
     to_station_id: str
+    departure_at: str
     entry_token: str
     created_at: datetime
 
