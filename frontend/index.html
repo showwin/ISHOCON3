@@ -172,8 +172,6 @@
     }
 
     async function fetchPurchasedTickets() {
-      // APIで購入済みチケット一覧取得
-      // 例: [{"schedule_id":"...","from_station":"...","to_station":"...","departure_time":"...","num_people":2,"total_price":20000,"entered":false,"entry_token":"...","qr_code_url":"..."}]
       const res = await fetch('/api/purchased_tickets');
       const data = await res.json();
       return data.tickets;
@@ -222,7 +220,7 @@
 
       schedules = fetchedSchedules;
       stations = fetchedStations;
-      purchasedTickets = fetchedTickets; // APIから取得した購入済みチケットをセット
+      purchasedTickets = fetchedTickets;
 
       const [h, m] = fetchedCurrentTime.split(':').map(v => parseInt(v,10));
       currentHours = h;
@@ -264,7 +262,7 @@
           const status = t.availability[seg.key] || 'none';
           const icon = availabilityIcons[status] || '✗';
 
-          const departure = t.departure_times && t.departure_times[seg.key] ? t.departure_times[seg.key] : '--:--';
+          const departure = t.departure_at && t.departure_at[seg.key] ? t.departure_at[seg.key] : '--:--';
           td.textContent = `${icon} (${departure})`;
 
           tr.appendChild(td);
@@ -328,7 +326,7 @@
           <p>${res.status === 'success' ? messages.success : messages.recommend}</p>
           <p>列車名: ${info.schedule_id}</p>
           <p>区間: ${info.from_station} -> ${info.to_station}</p>
-          <p>出発時間: ${info.departure_time}</p>
+          <p>出発時間: ${info.departure_at}</p>
           <p>座席: ${info.seats.join(', ')}</p>
           <p>合計金額: ${info.total_price}円 ${discountMessage}</p>
         `;
@@ -364,7 +362,6 @@
     }
 
     async function purchaseTicketAPI(info) {
-      // infoには reservation_id が入っている前提
       const purchaseRes = await fetch('/api/purchase', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -378,10 +375,10 @@
           schedule_id: info.schedule_id,
           from_station: info.from_station,
           to_station: info.to_station,
-          departure_time: info.departure_time,
-          num_people: info.seats.length,
+          departure_at: info.departure_at,
+          seats: info.seats,
           total_price: info.total_price,
-          entered: false,
+          is_entered: false,
           reservation_id: info.reservation_id,
           entry_token: purchaseRes.entry_token,
           qr_code_url: purchaseRes.qr_code_url
@@ -401,16 +398,15 @@
           <td>${ticket.schedule_id}</td>
           <td>${ticket.from_station}</td>
           <td>${ticket.to_station}</td>
-          <td>${ticket.departure_time}</td>
-          <td>${ticket.num_people}</td>
+          <td>${ticket.departure_at}</td>
+          <td>${ticket.seats.length}</td>
           <td>${ticket.total_price}</td>
-          <td><input type="checkbox" disabled ${ticket.entered?'checked':''}></td>
         `;
 
         const tdEntered = document.createElement('td');
         const enteredCheckbox = document.createElement('input');
         enteredCheckbox.type = 'checkbox';
-        enteredCheckbox.checked = ticket.entered;
+        enteredCheckbox.checked = ticket.is_entered;
         enteredCheckbox.disabled = true;
         tdEntered.appendChild(enteredCheckbox);
         tr.appendChild(tdEntered);
@@ -419,6 +415,7 @@
         const refundBtn = document.createElement('button');
         refundBtn.className = 'btn btn-danger btn-sm';
         refundBtn.textContent = '返金';
+        refundBtn.disabled = ticket.is_entered;
         refundBtn.addEventListener('click', () => {
           showRefundModal(ticket, index, "このチケットを返金しますか？");
         });
@@ -429,7 +426,7 @@
         const entranceBtn = document.createElement('button');
         entranceBtn.className = 'btn btn-success btn-sm';
         entranceBtn.textContent = '入場';
-        entranceBtn.disabled = ticket.entered;
+        entranceBtn.disabled = ticket.is_entered;
         entranceBtn.addEventListener('click', () => {
           showEntryModal(ticket, index);
         });
@@ -476,7 +473,7 @@
         }).then(r=>r.json());
 
         if (enterRes.status === 'success') {
-          ticket.entered = true;
+          ticket.is_entered = true;
           renderPurchasedTickets();
           entranceModal.hide();
         } else if (enterRes.status === 'TRAIN_DEPARTED') {

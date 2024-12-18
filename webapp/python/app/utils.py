@@ -241,7 +241,7 @@ def calculate_distance(start, end):
     return end_index - start_index
 
 
-def get_departure_time(schedule_id: str, from_station_id: str, to_station_id: str) -> str:
+def get_departure_at(schedule_id: str, from_station_id: str, to_station_id: str) -> str:
     stations = get_stations_between(from_station_id, to_station_id)
     next_station = stations[1]
 

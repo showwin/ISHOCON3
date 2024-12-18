@@ -10,10 +10,10 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from ulid import ULID
 
-from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment
+from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment, TrainModel
 from .middlewares import app_auth_middleware
 from .sql import engine
-from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_time, release_seat_reservation, generate_qr_image
+from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image
 
 app = FastAPI()
 
@@ -72,10 +72,23 @@ def get_stations() -> StationsResponse:
     return StationsResponse(stations=stations)
 
 
+class ScheduleData(BaseModel):
+    id: str
+    availability: dict[str, str]
+    departure_at: dict[str, str]
+
+
+class ScheduleResponse(BaseModel):
+    schedules: list[ScheduleData]
+
+
 @app.get("/api/schedules")
-def get_schedules():
+def get_schedules() -> ScheduleResponse:
     current_time = get_application_clock()
     current_hour, current_minute = current_time.split(":")
+
+    # 入場までのタイムラグを考慮して、3時間後以降のスケジュールを取得している。
+    # 本当はもっと直近のものを取得してできるだけ早い時間帯に乗車してもらいたい
     three_hours_later = f"{(int(current_hour) + 3):02d}:{current_minute}"
 
     with engine.begin() as conn:
@@ -90,7 +103,6 @@ def get_schedules():
             {"time": three_hours_later}
         ).fetchall()
     schedules = [TrainSchedule.model_validate(r) for r in rows]
-
 
     trains = []
     for schedule in schedules:
@@ -150,7 +162,7 @@ def get_schedules():
                 "Cave->Bridge": available_seats_between_stations["C->B"],
                 "Bridge->Arena": available_seats_between_stations["B->A"],
             },
-            "departure_times": {
+            "departure_at": {
                 "Arena->Bridge": schedule.departure_at_station_a_to_b,
                 "Bridge->Cave": schedule.departure_at_station_b_to_c,
                 "Cave->Dock": schedule.departure_at_station_c_to_d,
@@ -164,28 +176,75 @@ def get_schedules():
 
     return {"schedules": trains}
 
+class TicketData(BaseModel):
+    reservation_id: str
+    schedule_id: str
+    from_station: str
+    to_station: str
+    departure_at: str
+    seats: list[str]
+    total_price: int
+    entry_token: str
+    qr_code_url: str
+    is_entered: bool
+
+
+class PurchasedTicketsResponse(BaseModel):
+    tickets: list[TicketData]
+
+
 @app.get("/api/purchased_tickets")
-def get_purchased_tickets():
-    return {"tickets": [
-        {
-            "reservation_id": "UUID-1234-5678-91011",
-            "train_name": "Train 1",
-            "from_station": "Arena",
-            "to_station": "Bridge",
-            "departure_time": "12:30",
-            "seats": ["1-A", "1-B"],
-            "total_price": 20000
-        },
-        {
-            "reservation_id": "UUID-9876-5432-91011",
-            "train_name": "Train 2",
-            "from_station": "Bridge",
-            "to_station": "Cave",
-            "departure_time": "12:40",
-            "seats": ["2-A", "2-B"],
-            "total_price": 20000
-        }
-    ]}
+def get_purchased_tickets(
+    user: Annotated[User, Depends(app_auth_middleware)],
+) -> PurchasedTicketsResponse:
+    tickets = []
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                 SELECT
+                    r.id as reservation_id,
+                    r.schedule_id ,
+                    s1.name as from_station,
+                    s2.name as to_station,
+                    r.departure_at,
+                    p.amount as total_price,
+                    r.entry_token,
+                    qr.id as qr_id,
+                    CASE
+                        WHEN e.id IS NOT NULL THEN 1
+                        ELSE 0
+                    END AS is_entered
+                 FROM reservations r
+                 INNER JOIN payments p ON p.reservation_id = r.id
+                 INNER JOIN reservation_qr_images qr ON qr.reservation_id = r.id
+                 INNER JOIN stations s1 ON r.from_station_id = s1.id
+                 INNER JOIN stations s2 ON r.to_station_id = s2.id
+                 LEFT OUTER JOIN entries e ON e.reservation_id = r.id
+                 WHERE r.user_id = :user_id
+                 AND p.is_captured = true
+                 """),
+            {"user_id": user.id}
+        ).fetchall()
+        for r in rows:
+            seat_rows = conn.execute(
+                text("SELECT seat FROM reservation_seats WHERE reservation_id = :reservation_id"),
+                {"reservation_id": r[0]}
+            ).fetchall()
+            ticket = TicketData(
+                reservation_id=r[0],
+                schedule_id=r[1],
+                from_station=r[2],
+                to_station=r[3],
+                departure_at=r[4],
+                seats=[s[0] for s in seat_rows],
+                total_price=r[5],
+                entry_token=r[6],
+                qr_code_url=f"http://localhost:8080/api/qr/{r[7]}.png",
+                is_entered=r[8]
+            )
+            tickets.append(ticket)
+    return PurchasedTicketsResponse(tickets=tickets)
+
 
 class PostReserveRequest(BaseModel):
     schedule_id: str
@@ -198,7 +257,7 @@ class ReservationData(BaseModel):
     schedule_id: str
     from_station: str
     to_station: str
-    departure_time: str
+    departure_at: str
     seats: list[str]
     total_price: int
     is_discounted: bool
@@ -222,7 +281,7 @@ def post_reserve(
     if reserved_schedule_id is None:
         return {"status": "fail", "error_code": "NO_SEAT_AVAILABLE"}
 
-    departure_at = get_departure_time(reserved_schedule_id, req.from_station_id, req.to_station_id)
+    departure_at = get_departure_at(reserved_schedule_id, req.from_station_id, req.to_station_id)
     with engine.begin() as conn:
         reservation_id = ULID()
         conn.execute(
@@ -285,20 +344,23 @@ def post_reserve(
             schedule_id=reservation.schedule_id,
             from_station=from_station.name,
             to_station=to_station.name,
-            departure_time=reservation.departure_at,
+            departure_at=reservation.departure_at,
             seats=seats,
             total_price=total_price,
             is_discounted=is_discounted
         )
     )
 
+
 class PostPurchaseRequest(BaseModel):
     reservation_id: str
+
 
 class PostPurchaseResponse(BaseModel):
     status: str
     entry_token: str
     qr_code_url: str
+
 
 @app.post("/api/purchase")
 def post_purchase(
@@ -335,7 +397,6 @@ def post_purchase(
         release_seat_reservation(reservation)
 
     qr_image = generate_qr_image(reservation.entry_token)
-
     image_id = str(ULID())
     with engine.begin() as conn:
         conn.execute(
@@ -368,8 +429,10 @@ def get_qr(qr_id: str):
 class PostEntryRequest(BaseModel):
     entry_token: str
 
+
 class PostEntryResponse(BaseModel):
     status: str
+
 
 @app.post("/api/entry")
 def post_entry(
@@ -388,6 +451,7 @@ def post_entry(
 
     if reservation.user_id != user.id:
         return HTTPException(status_code=HTTPStatus.UNAUTHORIZED)
+
     # 列車の発車時間を過ぎていないことを確認
     if reservation.departure_at < get_application_clock():
         return PostEntryResponse(
@@ -445,6 +509,17 @@ def post_refund(
         )
 
     with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM entries WHERE reservation_id = :reservation_id"),
+            {"reservation_id": reservation.id}
+        ).fetchone()
+    if row is not None:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail="Already entered"
+        )
+
+    with engine.begin() as conn:
         conn.execute(
             text("UPDATE payments SET is_captured = false, is_refunded = true WHERE reservation_id = :reservation_id"),
             {"reservation_id": reservation.id}
@@ -464,8 +539,20 @@ class LoginRequest(BaseModel):
     name: str
     password: str
 
+
+class UserData(BaseModel):
+    id: str
+    name: str
+    is_admin: bool
+
+
+class LoginResponse(BaseModel):
+    status: str
+    user: UserData
+
+
 @app.post("/api/login")
-def post_login(req: LoginRequest, response: Response):
+def post_login(req: LoginRequest, response: Response) -> LoginResponse:
     with engine.begin() as conn:
         row = conn.execute(
             text("SELECT * FROM users WHERE name = :name"),
@@ -482,7 +569,11 @@ def post_login(req: LoginRequest, response: Response):
 
     response.set_cookie(key="user_name", value=user.name, httponly=True)
 
-    return {"status": "success", "user": {"id": user.id, "name": user.name, "is_admin": user.is_admin}}
+    return LoginResponse(
+        status="success",
+        user=User(id=user.id, name=user.name, is_admin=user.is_admin)
+    )
+
 
 @app.post("/api/logout")
 def post_logout(
@@ -578,6 +669,6 @@ def post_add_train():
     return {
         "status": "success",
         "train_name": "こまち5号",
-        "departure_time": "12:30",
+        "departure_at": "12:30",
         "seats": 120
     }
