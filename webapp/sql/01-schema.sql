@@ -32,7 +32,8 @@ CREATE TABLE `train_models` (
   `name` varchar(30) NOT NULL COMMENT 'モデル名',
   `seat_rows` int NOT NULL COMMENT '座席行数',
   `seat_columns` int NOT NULL COMMENT '座席列数(4列:A-D, 5列:A-E)',
-  PRIMARY KEY (`name`)
+  PRIMARY KEY (`name`),
+  UNIQUE KEY `name` (`name`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 

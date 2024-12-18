@@ -290,3 +290,9 @@ def generate_qr_image(entry_token: str) -> str:
     byte_io = BytesIO()
     img.save(byte_io, format='PNG')
     return byte_io.getvalue()
+
+def add_time(time_str: str, minutes: int) -> str:
+    h, m = map(int, time_str.split(":"))
+    h += (m + minutes) // 60
+    m = (m + minutes) % 60
+    return f"{h:02d}:{m:02d}"

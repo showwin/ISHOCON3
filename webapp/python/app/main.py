@@ -13,7 +13,7 @@ from ulid import ULID
 from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment, TrainModel
 from .middlewares import app_auth_middleware, admin_auth_middleware
 from .sql import engine
-from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image
+from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image, add_time
 
 app = FastAPI()
 
@@ -686,13 +686,100 @@ def get_admin_train_sales():
     return TrainSalesResponse(trains=train_sales)
 
 
-@app.post("/api/admin/add_train")
-def post_add_train():
+class TrainData(BaseModel):
+    model_names: list[str]
+
+@app.get("/api/train_models")
+def get_train_models() -> TrainData:
     with engine.begin() as conn:
         rows = conn.execute(
-            text("select * from train_schedules"),
+            text("SELECT * FROM train_models")
         ).fetchall()
+    train_models = [TrainModel.model_validate(r) for r in rows]
+    return TrainData(model_names=[m.name for m in train_models])
 
+
+class AddTrainRequest(BaseModel):
+    train_name: str
+    model_name: str
+    departure_times: list[str]
+
+
+class AddTrainResponse(BaseModel):
+    status: str
+
+
+@app.post("/api/admin/add_train")
+def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM train_models WHERE name = :name"),
+            {"name": req.model_name}
+        ).fetchone()
+    if row is None:
+        return HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO trains (name, model_name)
+                VALUES (:name, :model_name)
+                """),
+            {"name": req.train_name, "model_name": req.model_name}
+        )
+
+        row = conn.execute(
+            text("SELECT * FROM trains WHERE name = :name"),
+            {"name": req.train_name}
+        ).fetchone()
+    train = Train.model_validate(row)
+
+    with engine.begin() as conn:
+        for i, departure_time_at_a in enumerate(req.departure_times):
+            conn.execute(
+                text("""
+                    INSERT INTO train_schedules
+                    (id,
+                     train_id,
+                     departure_at_station_a_to_b,
+                     departure_at_station_b_to_c,
+                     departure_at_station_c_to_d,
+                     departure_at_station_d_to_e,
+                     departure_at_station_e_to_d,
+                     departure_at_station_d_to_c,
+                     departure_at_station_c_to_b,
+                     departure_at_station_b_to_a)
+                    VALUES
+                    (:id,
+                     :train_id,
+                     :departure_at_station_a_to_b,
+                     :departure_at_station_b_to_c,
+                     :departure_at_station_c_to_d,
+                     :departure_at_station_d_to_e,
+                     :departure_at_station_e_to_d,
+                     :departure_at_station_d_to_c,
+                     :departure_at_station_c_to_b,
+                     :departure_at_station_b_to_a)
+                    """),
+                {
+                    "id": f"{train.name}-{i + 1}",
+                    "train_id": train.id,
+                    "departure_at_station_a_to_b": departure_time_at_a,
+                    "departure_at_station_b_to_c": add_time(departure_time_at_a, 10),
+                    "departure_at_station_c_to_d": add_time(departure_time_at_a, 20),
+                    "departure_at_station_d_to_e": add_time(departure_time_at_a, 30),
+                    "departure_at_station_e_to_d": add_time(departure_time_at_a, 40),
+                    "departure_at_station_d_to_c": add_time(departure_time_at_a, 50),
+                    "departure_at_station_c_to_b": add_time(departure_time_at_a, 60),
+                    "departure_at_station_b_to_a": add_time(departure_time_at_a, 70),
+                }
+            )
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("SELECT * FROM train_schedules WHERE train_id = :train_id"),
+            {"train_id": train.id}
+        ).fetchall()
     schedules = [TrainSchedule.model_validate(r) for r in rows]
 
     with engine.begin() as conn:
@@ -730,9 +817,4 @@ def post_add_train():
                             "e": 1 if train_model.seat_columns >= 5 else 0,
                         },
                     )
-    return {
-        "status": "success",
-        "train_name": "こまち5号",
-        "departure_at": "12:30",
-        "seats": 120
-    }
+    return AddTrainResponse(status="success")

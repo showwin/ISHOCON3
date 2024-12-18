@@ -71,14 +71,13 @@
           <input type="text" class="form-control" id="train-name" required>
         </div>
         <div class="mb-3">
-          <label for="model-name" class="form-label">モデル名</label>
-          <input type="text" class="form-control" id="model-name" required>
+          <label for="model-select" class="form-label">モデル名</label>
+          <select id="model-select" class="form-select" required>
+          </select>
         </div>
         <div class="mb-3">
           <label class="form-label">A駅出発時間</label>
-          <div id="departure-times-container">
-            <!-- 出発時間入力欄を動的にここに追加 -->
-          </div>
+          <div id="departure-times-container"></div>
           <button type="button" id="add-time-button" class="btn btn-sm btn-outline-primary mt-2">
             <i class="bi bi-plus-circle"></i> 追加
           </button>
@@ -95,12 +94,14 @@
   <script>
     const MAX_TIMES = 20;
     let departureTimeCount = 0;
+    let trainModels = [];
 
     document.addEventListener('DOMContentLoaded', init);
 
     async function init() {
       await loadStats();
       await loadTrainSales();
+      await loadTrainModels();
       initAddTrainForm();
     }
 
@@ -139,13 +140,34 @@
       });
     }
 
+    async function loadTrainModels() {
+      const res = await fetch('/api/train_models');
+      if(res.ok) {
+        const data = await res.json();
+        trainModels = data.model_names;
+        renderModelOptions(trainModels);
+      } else {
+        console.error('Failed to load train models');
+      }
+    }
+
+    function renderModelOptions(models) {
+      const modelSelect = document.getElementById('model-select');
+      modelSelect.innerHTML = '';
+      models.forEach(modelName => {
+        const option = document.createElement('option');
+        option.value = modelName;
+        option.textContent = modelName;
+        modelSelect.appendChild(option);
+      });
+    }
+
     function initAddTrainForm() {
       const container = document.getElementById('departure-times-container');
       const addButton = document.getElementById('add-time-button');
       const form = document.getElementById('add-train-form');
       const messageDiv = document.getElementById('add-train-message');
 
-      // 最初に1つ追加
       addDepartureTimeInput(container);
 
       addButton.addEventListener('click', () => {
@@ -159,7 +181,8 @@
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const trainName = document.getElementById('train-name').value.trim();
-        const modelName = document.getElementById('model-name').value.trim();
+        const modelSelect = document.getElementById('model-select');
+        const modelName = modelSelect.value;
         const times = getDepartureTimes(container);
 
         if (!trainName || !modelName || times.length === 0) {
@@ -181,7 +204,6 @@
           const data = await res.json();
           if (data.status === 'success') {
             messageDiv.textContent = '列車が追加されました。';
-            // フォームリセット
             form.reset();
             container.innerHTML = '';
             departureTimeCount = 0;
