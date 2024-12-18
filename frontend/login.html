@@ -68,12 +68,14 @@
       }
 
       const data = await res.json();
-      // data例:
-      // { "status": "success" } or { "status": "fail", "error": "Invalid credentials" }
-
       if (data.status === 'success') {
-        // ログイン成功 -> waiting roomへ遷移
-        location.href = '/waiting.html';
+        if (data.user.is_admin) {
+          // 管理者ページへ
+          location.href = '/admin.html';
+        } else {
+          // ユーザページへ
+          location.href = '/waiting.html';
+        }
       } else {
         // ログイン失敗
         errorMessageDiv.textContent = data.error || 'ログインに失敗しました';

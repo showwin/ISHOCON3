@@ -35,7 +35,7 @@ def admin_auth_middleware(
     if not admin_name:
         raise HTTPException(
             status_code=HTTPStatus.UNAUTHORIZED,
-            detail="admin_session cookie is required",
+            detail="admin_name cookie is required",
         )
 
     with engine.begin() as conn:

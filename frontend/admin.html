@@ -53,6 +53,7 @@
             <th>販売枚数</th>
             <th>未確定売上</th>
             <th>確定売上</th>
+            <th>返金</th>
           </tr>
         </thead>
         <tbody id="train-sales-tbody">
@@ -115,7 +116,7 @@
     }
 
     async function loadTrainSales() {
-      const res = await fetch('/api/admin/trains_sales');
+      const res = await fetch('/api/admin/train_sales');
       if (res.ok) {
         const data = await res.json();
         renderTrainSales(data.trains);
@@ -133,6 +134,7 @@
         const tdTickets = document.createElement('td'); tdTickets.textContent = t.tickets_sold; tr.appendChild(tdTickets);
         const tdPending = document.createElement('td'); tdPending.textContent = t.pending_revenue + '円'; tr.appendChild(tdPending);
         const tdConfirmed = document.createElement('td'); tdConfirmed.textContent = t.confirmed_revenue + '円'; tr.appendChild(tdConfirmed);
+        const tdRefunds = document.createElement('td'); tdRefunds.textContent = t.refunds + '円'; tr.appendChild(tdRefunds);
         tbody.appendChild(tr);
       });
     }

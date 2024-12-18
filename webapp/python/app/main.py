@@ -11,7 +11,7 @@ from sqlalchemy import text
 from ulid import ULID
 
 from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment, TrainModel
-from .middlewares import app_auth_middleware
+from .middlewares import app_auth_middleware, admin_auth_middleware
 from .sql import engine
 from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image
 
@@ -567,11 +567,14 @@ def post_login(req: LoginRequest, response: Response) -> LoginResponse:
             detail="Invalid name or password"
         )
 
-    response.set_cookie(key="user_name", value=user.name, httponly=True)
+    if user.is_admin:
+        response.set_cookie(key="admin_name", value=user.name, httponly=True)
+    else:
+        response.set_cookie(key="user_name", value=user.name, httponly=True)
 
     return LoginResponse(
         status="success",
-        user=User(id=user.id, name=user.name, is_admin=user.is_admin)
+        user=UserData(id=user.id, name=user.name, is_admin=user.is_admin)
     )
 
 
@@ -585,42 +588,103 @@ def post_logout(
 
 
 ## ウェイティングルーム
+
+class WaitingStatusResponse(BaseModel):
+    status: int
+    next_check: int
+
+
 @app.get("/api/waiting_status")
-def get_waiting_status():
+def get_waiting_status() -> WaitingStatusResponse:
     r = random.randint(0, 10)
     if r < 1:
-        return {"status": "ready"}
-    return {
-        "status": "waiting",
-        "next_check": 500
-    }
+        status = "ready"
+    else:
+        status = "waiting"
+
+    return WaitingStatusResponse(
+        status=status,
+        next_check=500
+    )
 
 ## Admin API
-@app.get("/api/admin/stats")
-def get_admin_stats():
-    return {
-        "total_sales": 1000000,
-        "total_refunds": 20000
-    }
 
-@app.get("/api/admin/trains_sales")
-def get_admin_trains_sales():
-    return {
-        "trains": [
-            {
-                "train_name": "こまち3号",
-                "tickets_sold": 120,
-                "pending_revenue": 300000,
-                "confirmed_revenue": 200000,
-            },
-            {
-                "train_name": "こまち4号",
-                "tickets_sold": 120,
-                "pending_revenue": 300000,
-                "confirmed_revenue": 200000,
-            }
-        ]
-    }
+class StatsResponse(BaseModel):
+    total_sales: int
+    total_refunds: int
+
+
+@app.get("/api/admin/stats")
+def get_admin_stats(
+    _: Annotated[User, Depends(admin_auth_middleware)],
+) -> StatsResponse:
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                 SELECT SUM(amount) AS total_sales
+                 FROM payments
+                 INNER JOIN entries
+                 ON payments.reservation_id = entries.reservation_id
+                 WHERE is_captured = 1
+                 """),
+        ).fetchone()
+        total_sales = row[0] if row[0] else 0
+
+        row = conn.execute(
+            text("""
+                SELECT SUM(amount) AS total_refunds
+                FROM payments
+                WHERE is_refunded = 1
+                """),
+        ).fetchone()
+        total_refunds = row[0] if row[0] else 0
+
+    return StatsResponse(
+        total_sales=total_sales,
+        total_refunds=total_refunds
+    )
+
+
+class TrainSalesData(BaseModel):
+    train_name: str
+    tickets_sold: int
+    pending_revenue: int
+    confirmed_revenue: int
+    refunds: int
+
+
+class TrainSalesResponse(BaseModel):
+    trains: list[TrainSalesData]
+
+
+@app.get("/api/admin/train_sales")
+def get_admin_train_sales():
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+                 SELECT
+                    t.name as train_name,
+                    SUM(CASE WHEN p.is_captured THEN 1 ELSE 0 END) as tickets_sold,
+                    SUM(CASE WHEN e.id IS NULL AND p.is_captured THEN p.amount ELSE 0 END) as pending_revenue,
+                    SUM(CASE WHEN e.id IS NOT NULL AND p.is_captured THEN p.amount ELSE 0 END) as confirmed_revenue,
+                    SUM(CASE WHEN p.is_refunded THEN p.amount ELSE 0 END) as refunds
+                 FROM trains t
+                 INNER JOIN train_schedules s ON t.id = s.train_id
+                 INNER JOIN reservations r ON s.id = r.schedule_id
+                 INNER JOIN payments p ON r.id = p.reservation_id
+                 LEFT OUTER JOIN entries e ON r.id = e.reservation_id
+                 GROUP BY t.name
+                 """),
+        ).fetchall()
+        train_sales = [TrainSalesData(
+            train_name=r[0],
+            tickets_sold=r[1],
+            pending_revenue=r[2],
+            confirmed_revenue=r[3],
+            refunds=r[4]
+        ) for r in rows]
+    return TrainSalesResponse(trains=train_sales)
+
 
 @app.post("/api/admin/add_train")
 def post_add_train():
