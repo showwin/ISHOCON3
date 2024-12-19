@@ -2,7 +2,7 @@ import bcrypt
 import subprocess
 from typing import Annotated
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from http import HTTPStatus
 
 from fastapi import FastAPI, HTTPException, Response, Depends
@@ -83,7 +83,9 @@ class ScheduleResponse(BaseModel):
 
 
 @app.get("/api/schedules")
-def get_schedules() -> ScheduleResponse:
+def get_schedules(
+    user: Annotated[User, Depends(app_auth_middleware)],
+) -> ScheduleResponse:
     current_time = get_application_clock()
     current_hour, current_minute = current_time.split(":")
 
@@ -173,6 +175,16 @@ def get_schedules() -> ScheduleResponse:
                 "Bridge->Arena": schedule.departure_at_station_b_to_a
             }
         })
+
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            UPDATE users
+            SET api_call_at = :current_time
+            WHERE id = :user_id
+            """),
+            {"user_id": user.id, "current_time": datetime.now()}
+        )
 
     return {"schedules": trains}
 
@@ -587,24 +599,34 @@ def post_logout(
     return {"status": "success"}
 
 
-## ウェイティングルーム
+## Waiting Room
 
 class WaitingStatusResponse(BaseModel):
-    status: int
+    status: str
     next_check: int
 
 
 @app.get("/api/waiting_status")
 def get_waiting_status() -> WaitingStatusResponse:
-    r = random.randint(0, 10)
-    if r < 1:
-        status = "ready"
-    else:
+    active_time_threshold_sec = 10
+    max_active_users = 5
+    check_interval_ms = 500
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT count(*) as active_user_count FROM users WHERE api_call_at = :threshold"),
+            {"threshold": datetime.now() - timedelta(seconds=active_time_threshold_sec)}
+        ).fetchone()
+    active_user_count = row[0]
+
+    if active_user_count >= max_active_users:
         status = "waiting"
+    else:
+        status = "ready"
 
     return WaitingStatusResponse(
         status=status,
-        next_check=500
+        next_check=check_interval_ms
     )
 
 ## Admin API
