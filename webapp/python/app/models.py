@@ -23,7 +23,7 @@ class User(BaseModel):
     salt: str
     is_admin: bool
     global_payment_token: str
-    api_call_at: datetime | None
+    last_activity_at: datetime | None
     created_at: datetime
 
 

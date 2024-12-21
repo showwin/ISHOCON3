@@ -13,9 +13,19 @@ from ulid import ULID
 from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment, TrainModel
 from .middlewares import app_auth_middleware, admin_auth_middleware
 from .sql import engine
-from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image, add_time
+from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image, add_time, update_last_activity_at
 
 app = FastAPI()
+
+WAITING_ROOM_CONFIG = {
+    "max_active_users": 5,
+    "polling_interval_ms": 500
+}
+
+SESSION_CONFIG = {
+    "active_time_threshold_sec": 10,
+    "polling_interval_ms": 500
+}
 
 class PostInitializeResponse(BaseModel):
     initialized_at: datetime
@@ -83,9 +93,7 @@ class ScheduleResponse(BaseModel):
 
 
 @app.get("/api/schedules")
-def get_schedules(
-    user: Annotated[User, Depends(app_auth_middleware)],
-) -> ScheduleResponse:
+def get_schedules() -> ScheduleResponse:
     current_time = get_application_clock()
     current_hour, current_minute = current_time.split(":")
 
@@ -176,16 +184,6 @@ def get_schedules(
             }
         })
 
-    with engine.begin() as conn:
-        conn.execute(
-            text("""
-            UPDATE users
-            SET api_call_at = :current_time
-            WHERE id = :user_id
-            """),
-            {"user_id": user.id, "current_time": datetime.now()}
-        )
-
     return {"schedules": trains}
 
 class TicketData(BaseModel):
@@ -255,6 +253,10 @@ def get_purchased_tickets(
                 is_entered=r[8]
             )
             tickets.append(ticket)
+
+    # このAPIは画面リロード時に呼ばれるので、ユーザはアクティブだと判断してユーザーの最終アクティビティを更新する
+    update_last_activity_at(user.id)
+
     return PurchasedTicketsResponse(tickets=tickets)
 
 
@@ -285,6 +287,8 @@ def post_reserve(
     user: Annotated[User, Depends(app_auth_middleware)],
     req: PostReserveRequest
 ) -> PostReserveResponse:
+    update_last_activity_at(user.id)
+
     if not take_lock(req.schedule_id):
         return {"status": "fail", "error_code": "LOCK_TIMEOUT"}
 
@@ -381,6 +385,8 @@ def post_purchase(
 ) -> PostPurchaseResponse:
     # FIXME: レコメンドした場合はチケットが購入されない可能性があるので予約のロックが残ってしまうが、それが発生するケースは少ないと信じて一旦放置
 
+    update_last_activity_at(user.id)
+
     with engine.begin() as conn:
         row = conn.execute(
             text("SELECT * FROM reservations WHERE id = :id"),
@@ -448,7 +454,6 @@ class PostEntryResponse(BaseModel):
 
 @app.post("/api/entry")
 def post_entry(
-    user: Annotated[User, Depends(app_auth_middleware)],
     req: PostEntryRequest
 ) -> PostEntryResponse:
     with engine.begin() as conn:
@@ -460,9 +465,6 @@ def post_entry(
         return HTTPException(status_code=HTTPStatus.NOT_FOUND)
 
     reservation = Reservation.model_validate(row)
-
-    if reservation.user_id != user.id:
-        return HTTPException(status_code=HTTPStatus.UNAUTHORIZED)
 
     # 列車の発車時間を過ぎていないことを確認
     if reservation.departure_at < get_application_clock():
@@ -494,6 +496,8 @@ def post_refund(
     user: Annotated[User, Depends(app_auth_middleware)],
     req: PostRefundRequest
 ) -> PostRefundResponse:
+    update_last_activity_at(user.id)
+
     with engine.begin() as conn:
         row = conn.execute(
             text("SELECT * FROM reservations WHERE id = :id"),
@@ -545,6 +549,35 @@ def post_refund(
     )
 
 
+class SessionResponse(BaseModel):
+    status: str
+    next_check: int
+
+@app.get("/api/session")
+def get_session(
+    user: Annotated[User, Depends(app_auth_middleware)],
+    res: Response
+) -> SessionResponse:
+    # 開発中に短時間でセッションが切れるのは不便なので、ishoconユーザはセッションを切れないようにしておくのがおすすめ
+    # if user.name == "ishocon":
+    #     return SessionResponse(
+    #         status="active",
+    #         next_check=9999999999
+    #     )
+
+    # `active_time_threshold_sec` 秒以上アクティブでないユーザはログアウトさせる
+    if user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["active_time_threshold_sec"])):
+        res.set_cookie(key="user_name", value=None, httponly=True)
+        return SessionResponse(
+            status="session_expired",
+            next_check=SESSION_CONFIG["polling_interval_ms"]
+        )
+    return SessionResponse(
+        status="active",
+        next_check=SESSION_CONFIG["polling_interval_ms"]
+    )
+
+
 ## ログインページ
 
 class LoginRequest(BaseModel):
@@ -584,6 +617,8 @@ def post_login(req: LoginRequest, response: Response) -> LoginResponse:
     else:
         response.set_cookie(key="user_name", value=user.name, httponly=True)
 
+    update_last_activity_at(user.id)
+
     return LoginResponse(
         status="success",
         user=UserData(id=user.id, name=user.name, is_admin=user.is_admin)
@@ -607,26 +642,27 @@ class WaitingStatusResponse(BaseModel):
 
 
 @app.get("/api/waiting_status")
-def get_waiting_status() -> WaitingStatusResponse:
-    active_time_threshold_sec = 10
-    max_active_users = 5
-    check_interval_ms = 500
+def get_waiting_status(
+    user: Annotated[User, Depends(app_auth_middleware)],
+) -> WaitingStatusResponse:
+
+    update_last_activity_at(user.id)
 
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT count(*) as active_user_count FROM users WHERE api_call_at = :threshold"),
-            {"threshold": datetime.now() - timedelta(seconds=active_time_threshold_sec)}
+            text("SELECT count(*) as active_user_count FROM users WHERE last_activity_at = :threshold"),
+            {"threshold": datetime.now() - timedelta(seconds=SESSION_CONFIG["active_time_threshold_sec"])}
         ).fetchone()
     active_user_count = row[0]
 
-    if active_user_count >= max_active_users:
+    if active_user_count >= WAITING_ROOM_CONFIG["max_active_users"]:
         status = "waiting"
     else:
         status = "ready"
 
     return WaitingStatusResponse(
         status=status,
-        next_check=check_interval_ms
+        next_check=WAITING_ROOM_CONFIG["polling_interval_ms"]
     )
 
 ## Admin API
@@ -710,6 +746,7 @@ def get_admin_train_sales():
 
 class TrainData(BaseModel):
     model_names: list[str]
+
 
 @app.get("/api/train_models")
 def get_train_models() -> TrainData:

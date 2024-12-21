@@ -296,3 +296,15 @@ def add_time(time_str: str, minutes: int) -> str:
     h += (m + minutes) // 60
     m = (m + minutes) % 60
     return f"{h:02d}:{m:02d}"
+
+
+def update_last_activity_at(user_id) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+            UPDATE users
+            SET last_activity_at = :current_time
+            WHERE id = :user_id
+            """),
+            {"user_id": user_id, "current_time": datetime.now()}
+        )

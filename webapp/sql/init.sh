@@ -40,10 +40,16 @@ mysql -u"$ISHOCON_DB_USER" \
 		-p"$ISHOCON_DB_PASSWORD" \
 		--host "$ISHOCON_DB_HOST" \
 		--port "$ISHOCON_DB_PORT" \
-		"$ISHOCON_DB_NAME" < 03-dump.sql
+		"$ISHOCON_DB_NAME" < 03-users.sql
 
 mysql -u"$ISHOCON_DB_USER" \
 		-p"$ISHOCON_DB_PASSWORD" \
 		--host "$ISHOCON_DB_HOST" \
 		--port "$ISHOCON_DB_PORT" \
-		"$ISHOCON_DB_NAME" < 04-qr.sql
+		"$ISHOCON_DB_NAME" < 04-seat_row_reservations.sql
+
+mysql -u"$ISHOCON_DB_USER" \
+		-p"$ISHOCON_DB_PASSWORD" \
+		--host "$ISHOCON_DB_HOST" \
+		--port "$ISHOCON_DB_PORT" \
+		"$ISHOCON_DB_NAME" < 05-qr.sql

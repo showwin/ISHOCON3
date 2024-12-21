@@ -246,6 +246,9 @@
           renderScheduleOptions(updatedSchedules);
         }
       }, 1000);
+
+      // セッションチェックを開始
+      checkSession();
     }
 
     function renderSchedules(scheduleData) {
@@ -588,6 +591,26 @@
       }
 
       updateCurrentTimeDisplay();
+    }
+
+    async function checkSession() {
+      try {
+        const res = await fetch('/api/session');
+        if (!res.ok) {
+          console.error('セッションチェックのリクエストに失敗しました');
+          return;
+        }
+        const data = await res.json();
+        if (data.status === 'session_expired') {
+          location.href = '/login.html';
+        } else if (data.status === 'active') {
+          setTimeout(checkSession, data.next_check);
+        } else {
+          console.error('未知のステータス: ', data.status);
+        }
+      } catch (err) {
+        console.error('セッションチェックエラー: ', err);
+      }
     }
 
     function startClockSimulation() {

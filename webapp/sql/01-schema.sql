@@ -11,7 +11,7 @@ CREATE TABLE `users` (
   `salt` varchar(30) NOT NULL COMMENT 'ソルト',
   `is_admin` tinyint(1) NOT NULL DEFAULT 0 COMMENT '管理者フラグ',
   `global_payment_token` varchar(36) NOT NULL COMMENT '支払い用のトークン',
-  `api_call_at` datetime(6) DEFAULT NULL COMMENT '最終APIコール',
+  `last_activity_at` datetime(6) DEFAULT NULL COMMENT '最後のユーザアクション時刻',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
