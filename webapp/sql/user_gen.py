@@ -28,7 +28,7 @@ user_count = 1000
 
 with engine.begin() as conn:
   with open('users.csv', 'w') as f:
-      f.write('name,hashed_password,global_payment_token\n')
+      f.write('name,password,global_payment_token\n')
       for i in range(user_count):
           name = "user" + str(i+ 1)
           user_id = str(ULID())

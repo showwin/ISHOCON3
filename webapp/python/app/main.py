@@ -559,11 +559,11 @@ def get_session(
     res: Response
 ) -> SessionResponse:
     # 開発中に短時間でセッションが切れるのは不便なので、ishoconユーザはセッションを切れないようにしておくのがおすすめ
-    # if user.name == "ishocon":
-    #     return SessionResponse(
-    #         status="active",
-    #         next_check=9999999999
-    #     )
+    if user.name == "ishocon":
+        return SessionResponse(
+            status="active",
+            next_check=9999999999
+        )
 
     # `active_time_threshold_sec` 秒以上アクティブでないユーザはログアウトさせる
     if user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["active_time_threshold_sec"])):
@@ -646,11 +646,9 @@ def get_waiting_status(
     user: Annotated[User, Depends(app_auth_middleware)],
 ) -> WaitingStatusResponse:
 
-    update_last_activity_at(user.id)
-
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT count(*) as active_user_count FROM users WHERE last_activity_at = :threshold"),
+            text("SELECT count(*) as active_user_count FROM users WHERE last_activity_at >= :threshold"),
             {"threshold": datetime.now() - timedelta(seconds=SESSION_CONFIG["active_time_threshold_sec"])}
         ).fetchone()
     active_user_count = row[0]
@@ -659,6 +657,8 @@ def get_waiting_status(
         status = "waiting"
     else:
         status = "ready"
+
+    print("active_user_count", active_user_count, "status", status)
 
     return WaitingStatusResponse(
         status=status,
