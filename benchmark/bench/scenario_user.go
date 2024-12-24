@@ -1,70 +1,71 @@
 package bench
 
 import (
+	"bytes"
+	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"io"
-	"bytes"
-	"time"
-	"context"
-	"os"
+	"math"
 	"math/rand"
-	"encoding/json"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/isucon/isucandar/agent"
 	"github.com/isucon/isucandar/worker"
 )
 
-
 type User struct {
-    Name               string
-    Password           string
-    GlobalPaymentToken string
+	Name               string
+	Password           string
+	GlobalPaymentToken string
+	CreditAmount       int
 }
 
 type TrainAvailability struct {
 	ArenaToBridge string `json:"Arena->Bridge"` // "lots", "few", "none"
-  BridgeToCave  string `json:"Bridge->Cave"`
-	CaveToDock string `json:"Cave->Dock"`
-	DockToEdge string `json:"Dock->Edge"`
-	EdgeToDock string `json:"Edge->Dock"`
-	DockToCave string `json:"Dock->Cave"`
-	CaveToBridge string `json:"Cave->Bridge"`
+	BridgeToCave  string `json:"Bridge->Cave"`
+	CaveToDock    string `json:"Cave->Dock"`
+	DockToEdge    string `json:"Dock->Edge"`
+	EdgeToDock    string `json:"Edge->Dock"`
+	DockToCave    string `json:"Dock->Cave"`
+	CaveToBridge  string `json:"Cave->Bridge"`
 	BridgeToArena string `json:"Bridge->Arena"`
 }
 
 type TrainDepartureAt struct {
 	ArenaToBridge string `json:"Arena->Bridge"` // "HH:MM" format
 	BridgeToCave  string `json:"Bridge->Cave"`
-	CaveToDock string `json:"Cave->Dock"`
-	DockToEdge string `json:"Dock->Edge"`
-	EdgeToDock string `json:"Edge->Dock"`
-	DockToCave string `json:"Dock->Cave"`
-	CaveToBridge string `json:"Cave->Bridge"`
+	CaveToDock    string `json:"Cave->Dock"`
+	DockToEdge    string `json:"Dock->Edge"`
+	EdgeToDock    string `json:"Edge->Dock"`
+	DockToCave    string `json:"Dock->Cave"`
+	CaveToBridge  string `json:"Cave->Bridge"`
 	BridgeToArena string `json:"Bridge->Arena"`
 }
 
 type TrainSchedule struct {
-	ID          string `json:"id"`
+	ID           string            `json:"id"`
 	Availability TrainAvailability `json:"availability"`
-	DepartureAt TrainDepartureAt `json:"departure_at"`
+	DepartureAt  TrainDepartureAt  `json:"departure_at"`
 }
 
 type TrainScheduleResp struct {
-	Schedules []TrainSchedule  `json:"schedules"`
+	Schedules []TrainSchedule `json:"schedules"`
 }
 
 // Travel plan.
 type Itinerary struct {
-    Stations       []string
-    ArrivalTimes   []time.Time
-    DepartureTimes []time.Time
+	Stations       []string
+	ArrivalTimes   []time.Time
+	DepartureTimes []time.Time
 }
 
 var (
-    stations = []string{"A", "B", "C", "D", "E"}
+	stations = []string{"A", "B", "C", "D", "E"}
 )
 
 // type BoughtTicket struct {
@@ -73,43 +74,43 @@ var (
 // }
 
 type LoginReq struct {
-	Name string `json:"name"`
+	Name     string `json:"name"`
 	Password string `json:"password"`
 }
 
 type WaitingStatusResp struct {
-	Status		string `json:"status"`
+	Status    string `json:"status"`
 	NextCheck int    `json:"next_check"`
 }
 
 type SessionResp struct {
-  Status    string `json:"status"`
-  NextCheck int    `json:"next_check"`
+	Status    string `json:"status"`
+	NextCheck int    `json:"next_check"`
 }
 
 type ReservationReq struct {
-	ScheduleID string `json:"schedule_id"`
+	ScheduleID    string `json:"schedule_id"`
 	FromStationID string `json:"from_station_id"`
-	ToStationID string `json:"to_station_id"`
-	NumPeople int `json:"num_people"`
+	ToStationID   string `json:"to_station_id"`
+	NumPeople     int    `json:"num_people"`
 }
 
 type ReservationResp struct {
-	Status string `json:"status"`
-	Reserved *Reservation `json:"reserved"`
+	Status    string       `json:"status"`
+	Reserved  *Reservation `json:"reserved"`
 	Recommend *Reservation `json:"recommend"`
-	ErrorCode string `json:"error_code"`
+	ErrorCode string       `json:"error_code"`
 }
 
 type Reservation struct {
-	ReservationID string `json:"reservation_id"`
-	ScheduleID string `json:"schedule_id"`
-	FromStation string `json:"from_station"`
-	ToStation string `json:"to_station"`
-	DepartureAt string `json:"departure_at"`
-	Seats []string `json:"seats"`
-	TotalPrice int `json:"total_price"`
-	IsDiscounted bool `json:"is_discounted"`
+	ReservationID string   `json:"reservation_id"`
+	ScheduleID    string   `json:"schedule_id"`
+	FromStation   string   `json:"from_station"`
+	ToStation     string   `json:"to_station"`
+	DepartureAt   string   `json:"departure_at"`
+	Seats         []string `json:"seats"`
+	TotalPrice    int      `json:"total_price"`
+	IsDiscounted  bool     `json:"is_discounted"`
 }
 
 type PurchaseReq struct {
@@ -117,14 +118,13 @@ type PurchaseReq struct {
 }
 
 type PurchaseResp struct {
-	Status string `json:"status"`
+	Status     string `json:"status"`
 	EntryToken string `json:"entry_token"`
-	QRCodeURL string `json:"qr_code_url"`
+	QRCodeURL  string `json:"qr_code_url"`
 }
 
-
 func (s *Scenario) RunUserScenario(ctx context.Context) {
-	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithDefaultTransport())
+	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
 	if err != nil {
 		s.log.Error("failed to create agent", err.Error())
 	}
@@ -172,14 +172,14 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 	// Finish if the session is expired
 	s.checkSession(ctx, agent, user)
 
-  s.log.Info("user", user.Name, "Session ended", "user", user.Name)
+	s.log.Info("user", user.Name, "Session ended", "user", user.Name)
 }
 
 func (s *Scenario) makeReservation(ctx context.Context, agent *agent.Agent, user User, req ReservationReq) (*ReservationResp, error) {
 	reqBodyBuf, err := json.Marshal(req)
 	if err != nil {
-			s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
-			return nil, err
+		s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
+		return nil, err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/reserve", bytes.NewReader(reqBodyBuf))
 	if err != nil {
@@ -200,8 +200,8 @@ func (s *Scenario) makeReservation(ctx context.Context, agent *agent.Agent, user
 func (s *Scenario) purchaseReservation(ctx context.Context, agent *agent.Agent, user User, req PurchaseReq) (*PurchaseResp, error) {
 	reqBodyBuf, err := json.Marshal(req)
 	if err != nil {
-			s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
-			return nil, err
+		s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
+		return nil, err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/purchase", bytes.NewReader(reqBodyBuf))
 	if err != nil {
@@ -218,141 +218,15 @@ func (s *Scenario) purchaseReservation(ctx context.Context, agent *agent.Agent, 
 	return &purchaseResp, nil
 }
 
-func findEarliestSchedule(from string, to string, after string, schedules []TrainSchedule) (*TrainSchedule, string, error) {
-	var earliestSchedule *TrainSchedule
-	departureTime := "24:00" // Initialize with the slowest time
-
-	for _, schedule := range schedules {
-		// Get the departure time string for this leg
-		scheduleDepartureStr := getScheduleDeparture(schedule.DepartureAt, from, to)
-		if scheduleDepartureStr == "" {
-			return nil, "", fmt.Errorf("no departure time found for %s -> %s", from, to)
-		}
-
-		if scheduleDepartureStr < after {
-			continue
-		}
-
-		if !getScheduleAvailability(schedule.Availability, from, to) {
-			continue
-		}
-
-		if scheduleDepartureStr < departureTime {
-			earliestSchedule = &schedule
-			departureTime = scheduleDepartureStr
-		}
-	}
-
-	if earliestSchedule == nil {
-		return nil, "", fmt.Errorf("no available schedule found for %s -> %s after %s", from, to, after)
-	}
-
-	return earliestSchedule, departureTime, nil
-}
-
-func indexOf(slice []string, target string) int {
-    for i, v := range slice {
-        if v == target {
-            return i
-        }
-    }
-    return -1
-}
-
-func reverseSlice(s []string) []string {
-	n := len(s)
-	reversed := make([]string, n)
-	for i, v := range s {
-		reversed[n-1-i] = v
-	}
-	return reversed
-}
-
-func getScheduleDeparture(departureAt TrainDepartureAt, from string, to string) string {
-	var nextStation string
-	idx := indexOf(stations, from)
-	if from < to {
-		nextStation = stations[idx + 1]
-	} else {
-		nextStation = stations[idx - 1]
-	}
-	key := fmt.Sprintf("%s->%s", from, nextStation)
-
-	switch key {
-	case "A->B":
-		return departureAt.ArenaToBridge
-	case "B->C":
-		return departureAt.BridgeToCave
-	case "C->D":
-		return departureAt.CaveToDock
-	case "D->E":
-		return departureAt.DockToEdge
-	case "E->D":
-		return departureAt.EdgeToDock
-	case "D->C":
-		return departureAt.DockToCave
-	case "C->B":
-		return departureAt.CaveToBridge
-	case "B->A":
-		return departureAt.BridgeToArena
-	default:
-		return ""
-	}
-}
-
-func getScheduleAvailability(availability TrainAvailability, from string, to string) bool {
-	var stationsBetween []string
-	fromIdx := indexOf(stations, from)
-	toIdx := indexOf(stations, to)
-	if from < to {
-		stationsBetween = stations[fromIdx : toIdx+1]
-	} else {
-		stationsBetween = stations[toIdx : fromIdx+1]
-		stationsBetween = reverseSlice(stationsBetween)
-	}
-
-	var a string
-	for i := 0; i < len(stationsBetween)-1; i++ {
-		from := stationsBetween[i]
-		to := stationsBetween[i+1]
-		key := fmt.Sprintf("%s->%s", from, to)
-		switch key {
-		case "A->B":
-			a = availability.ArenaToBridge
-		case "B->C":
-			a = availability.BridgeToCave
-		case "C->D":
-			a = availability.CaveToDock
-		case "D->E":
-			a = availability.DockToEdge
-		case "E->D":
-			a = availability.EdgeToDock
-		case "D->C":
-			a = availability.DockToCave
-		case "C->B":
-			a = availability.CaveToBridge
-		case "B->A":
-			a = availability.BridgeToArena
-		default:
-			a = "none"
-		}
-		if a == "none" {
-			return false
-		}
-	}
-	return true
-}
-
 func getApplicationClock(initializedAt time.Time) string {
 	timePassedInSec := time.Now().Sub(initializedAt).Seconds()
-	hours := math.Min(math.Floor(timePassedInSec / 6), 24)
+	hours := math.Min(math.Floor(timePassedInSec/6), 24)
 	if hours == 24 {
 		return "24:00"
 	}
 	minutes := math.Mod(timePassedInSec, 6) * 10
 	return fmt.Sprintf("%02d:%02d", hours, minutes)
 }
-
 
 func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent, user User) error {
 	s.sendInitRequests(ctx, agent, user)
@@ -372,6 +246,8 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 
 	currentTime := getApplicationClock(s.initializedAt)
 
+	numPeople := decideNumPeople(user.CreditAmount, itinerary)
+
 	for i := 0; i < len(itinerary.Stations)-1; i++ {
 		from := itinerary.Stations[i]
 		to := itinerary.Stations[i+1]
@@ -383,18 +259,18 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 			return err
 		}
 
-		s.log.Info("Attempting to reserve ticket", "from", from, "to", to, "departure_at", departureTimeStr, "schedule_id", schedule.ID)
+		s.log.Info("Attempting to reserve ticket", "from", from, "to", to, "departure_at", departureTimeStr, "schedule_id", schedule.ID, "numPeople", numPeople)
 
 		// Make reservation request
 		reservationReq := ReservationReq{
-			ScheduleID: schedule.ID,
+			ScheduleID:    schedule.ID,
 			FromStationID: from,
-			ToStationID: to,
-			NumPeople: 1,  // TODO: Change random number of people
+			ToStationID:   to,
+			NumPeople:     numPeople,
 		}
 		reservationResp, err := s.makeReservation(ctx, agent, user, reservationReq)
 		if err != nil {
-			s.log.Error("Reservation request failed", "from", from, "to", to, "schedule_id", schedule.ID, "error", err.Error())
+			s.log.Error("Reservation request failed", "from", from, "to", to, "schedule_id", schedule.ID, "numPeople", numPeople, "error", err.Error())
 			return err
 		}
 
@@ -483,13 +359,13 @@ func (s *Scenario) sendInitRequests(ctx context.Context, agent *agent.Agent, use
 func (s *Scenario) postLogin(ctx context.Context, agent *agent.Agent, user User) error {
 	s.log.Debug("POST /api/login", "user", user.Name)
 	reqBody := &LoginReq{
-		Name: user.Name,
+		Name:     user.Name,
 		Password: user.Password,
 	}
 	reqBodyBuf, err := json.Marshal(reqBody)
 	if err != nil {
-			s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
-			return err
+		s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
+		return err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/login", bytes.NewReader(reqBodyBuf))
 	if err != nil {
@@ -519,7 +395,7 @@ func (s *Scenario) waitInWaitingRoom(ctx context.Context, agent *agent.Agent, us
 		} else if waitingStatus.Status == "waiting" {
 			time.Sleep(time.Duration(waitingStatus.NextCheck) * time.Millisecond)
 		} else {
-			s.log.Error("Unknown status",  waitingStatus.Status, "Stopping requests.", "user", user.Name)
+			s.log.Error("Unknown status", waitingStatus.Status, "Stopping requests.", "user", user.Name)
 			break
 		}
 	}
@@ -556,95 +432,251 @@ func (s *Scenario) checkSession(ctx context.Context, agent *agent.Agent, user Us
 	return nil
 }
 
-
 func (s *Scenario) getRandomUser() (User, error) {
-		csvFilePath := "./bench/data/users.csv"
-		userTotalCount := 1001
+	csvFilePath := "./bench/data/users.csv"
+	userTotalCount := 1001
 
-    file, err := os.Open(csvFilePath)
-    if err != nil {
-        return User{}, fmt.Errorf("failed to open CSV file: %w", err)
-    }
-    defer file.Close()
+	file, err := os.Open(csvFilePath)
+	if err != nil {
+		return User{}, fmt.Errorf("failed to open CSV file: %w", err)
+	}
+	defer file.Close()
 
-    reader := csv.NewReader(file)
-    reader.TrimLeadingSpace = true
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
 
-    // Read the header line
-    headers, err := reader.Read()
-    if err != nil {
-        return User{}, fmt.Errorf("failed to read CSV headers: %w", err)
-    }
+	// Read the header line
+	headers, err := reader.Read()
+	if err != nil {
+		return User{}, fmt.Errorf("failed to read CSV headers: %w", err)
+	}
 
-    // Map headers to their indices for flexibility
-    headerMap := make(map[string]int)
-    for idx, header := range headers {
-        headerMap[header] = idx
-    }
+	// Map headers to their indices for flexibility
+	headerMap := make(map[string]int)
+	for idx, header := range headers {
+		headerMap[header] = idx
+	}
 
-    // Ensure required headers are present
-    requiredHeaders := []string{"name", "password", "global_payment_token"}
-    for _, header := range requiredHeaders {
-        if _, exists := headerMap[header]; !exists {
-            return User{}, fmt.Errorf("missing required header: %s", header)
-        }
-    }
+	// Ensure required headers are present
+	requiredHeaders := []string{"name", "password", "global_payment_token", "credit_amount"}
+	for _, header := range requiredHeaders {
+		if _, exists := headerMap[header]; !exists {
+			return User{}, fmt.Errorf("missing required header: %s", header)
+		}
+	}
 
-    var selectedUser User
-		var count int = 0
-    index := rand.Intn(userTotalCount)
+	var selectedUser User
+	var count int = 0
+	index := rand.Intn(userTotalCount)
 
-    for {
-        record, err := reader.Read()
-        if err != nil {
-            if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) {
-                break
-            }
-            return User{}, fmt.Errorf("error reading CSV record: %w", err)
-        }
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) {
+				break
+			}
+			return User{}, fmt.Errorf("error reading CSV record: %w", err)
+		}
 
-        count++
+		count++
 
-				if count == index {
-					selectedUser = User{
-							Name:               record[headerMap["name"]],
-							Password:           record[headerMap["password"]],
-							GlobalPaymentToken: record[headerMap["global_payment_token"]],
-					}
-					break
-				}
-    }
+		if count == index {
+			creditAmount, _ := strconv.Atoi(record[headerMap["credit_amount"]])
+			selectedUser = User{
+				Name:               record[headerMap["name"]],
+				Password:           record[headerMap["password"]],
+				GlobalPaymentToken: record[headerMap["global_payment_token"]],
+				CreditAmount:       creditAmount,
+			}
+			break
+		}
+	}
 
-    return selectedUser, nil
+	return selectedUser, nil
+}
+
+func findEarliestSchedule(from string, to string, after string, schedules []TrainSchedule) (*TrainSchedule, string, error) {
+	var earliestSchedule *TrainSchedule
+	departureTime := "24:00" // Initialize with the slowest time
+
+	for _, schedule := range schedules {
+		// Get the departure time string for this leg
+		scheduleDepartureStr := getScheduleDeparture(schedule.DepartureAt, from, to)
+		if scheduleDepartureStr == "" {
+			return nil, "", fmt.Errorf("no departure time found for %s -> %s", from, to)
+		}
+
+		if scheduleDepartureStr < after {
+			continue
+		}
+
+		if !getScheduleAvailability(schedule.Availability, from, to) {
+			continue
+		}
+
+		if scheduleDepartureStr < departureTime {
+			earliestSchedule = &schedule
+			departureTime = scheduleDepartureStr
+		}
+	}
+
+	if earliestSchedule == nil {
+		return nil, "", fmt.Errorf("no available schedule found for %s -> %s after %s", from, to, after)
+	}
+
+	// TODO: add some sleep to check if the application have enough session timeout
+
+	return earliestSchedule, departureTime, nil
+}
+
+func indexOf(slice []string, target string) int {
+	for i, v := range slice {
+		if v == target {
+			return i
+		}
+	}
+	return -1
+}
+
+func reverseSlice(s []string) []string {
+	n := len(s)
+	reversed := make([]string, n)
+	for i, v := range s {
+		reversed[n-1-i] = v
+	}
+	return reversed
+}
+
+func getScheduleDeparture(departureAt TrainDepartureAt, from string, to string) string {
+	var nextStation string
+	idx := indexOf(stations, from)
+	if from < to {
+		nextStation = stations[idx+1]
+	} else {
+		nextStation = stations[idx-1]
+	}
+	key := fmt.Sprintf("%s->%s", from, nextStation)
+
+	switch key {
+	case "A->B":
+		return departureAt.ArenaToBridge
+	case "B->C":
+		return departureAt.BridgeToCave
+	case "C->D":
+		return departureAt.CaveToDock
+	case "D->E":
+		return departureAt.DockToEdge
+	case "E->D":
+		return departureAt.EdgeToDock
+	case "D->C":
+		return departureAt.DockToCave
+	case "C->B":
+		return departureAt.CaveToBridge
+	case "B->A":
+		return departureAt.BridgeToArena
+	default:
+		return ""
+	}
+}
+
+func getScheduleAvailability(availability TrainAvailability, from string, to string) bool {
+	var stationsBetween []string
+	fromIdx := indexOf(stations, from)
+	toIdx := indexOf(stations, to)
+	if from < to {
+		stationsBetween = stations[fromIdx : toIdx+1]
+	} else {
+		stationsBetween = stations[toIdx : fromIdx+1]
+		stationsBetween = reverseSlice(stationsBetween)
+	}
+
+	var a string
+	for i := 0; i < len(stationsBetween)-1; i++ {
+		from := stationsBetween[i]
+		to := stationsBetween[i+1]
+		key := fmt.Sprintf("%s->%s", from, to)
+		switch key {
+		case "A->B":
+			a = availability.ArenaToBridge
+		case "B->C":
+			a = availability.BridgeToCave
+		case "C->D":
+			a = availability.CaveToDock
+		case "D->E":
+			a = availability.DockToEdge
+		case "E->D":
+			a = availability.EdgeToDock
+		case "D->C":
+			a = availability.DockToCave
+		case "C->B":
+			a = availability.CaveToBridge
+		case "B->A":
+			a = availability.BridgeToArena
+		default:
+			a = "none"
+		}
+		if a == "none" {
+			return false
+		}
+	}
+	return true
 }
 
 func generateRandomItinerary() *Itinerary {
-    minStations := 2
-    maxStations := 5
-    numStations := rand.Intn(maxStations-minStations+1) + minStations
+	minStations := 2
+	maxStations := 5
+	numStations := rand.Intn(maxStations-minStations+1) + minStations
 
-    itinerary := &Itinerary{
-        Stations:       make([]string, 0, numStations),
-        ArrivalTimes:   make([]time.Time, 0, numStations),
-        DepartureTimes: make([]time.Time, 0, numStations),
-    }
+	itinerary := &Itinerary{
+		Stations:       make([]string, 0, numStations),
+		ArrivalTimes:   make([]time.Time, 0, numStations),
+		DepartureTimes: make([]time.Time, 0, numStations),
+	}
 
-    currentStation := stations[rand.Intn(len(stations))]
-    itinerary.Stations = append(itinerary.Stations, currentStation)
+	currentStation := stations[rand.Intn(len(stations))]
+	itinerary.Stations = append(itinerary.Stations, currentStation)
 
-    for {
-        nextStations := stations[rand.Intn(len(stations))]
+	for {
+		nextStations := stations[rand.Intn(len(stations))]
 
-				if currentStation == nextStations {
-					continue
-				}
-				itinerary.Stations = append(itinerary.Stations, nextStations)
-				currentStation = nextStations
+		if currentStation == nextStations {
+			continue
+		}
+		itinerary.Stations = append(itinerary.Stations, nextStations)
+		currentStation = nextStations
 
-				if len(itinerary.Stations) == numStations {
-					break
-			  }
-    }
+		if len(itinerary.Stations) == numStations {
+			break
+		}
+	}
 
-    return itinerary
+	return itinerary
+}
+
+func decideNumPeople(creditAmount int, itinerary *Itinerary) int {
+	totalDistance := 0
+	baseTicketPrice := 1000
+	minPeople := 1
+	maxPeople := 50
+	for i := 0; i < len(itinerary.Stations)-1; i++ {
+		from := itinerary.Stations[i]
+		to := itinerary.Stations[i+1]
+		totalDistance += int(math.Abs(float64(indexOf(stations, from) - indexOf(stations, to))))
+	}
+
+	costPerPerson := baseTicketPrice * totalDistance
+	// 90% of probability to choose lower than the maximum number of people
+	// 10% of probability to choose more than the maximum number of people
+	maxNumPeople := int(math.Ceil(float64(creditAmount) / float64(costPerPerson)))
+	if rand.Float64() < 0.9 {
+		if maxNumPeople < 15 {
+			// 与信の付与額上、15人以下が結構多いので、ランダムを取って期待値を半分に圧縮する
+			return rand.Intn(maxNumPeople) + 1
+		} else if maxNumPeople < minPeople {
+			return minPeople
+		} else if maxNumPeople > maxPeople {
+			return maxPeople
+		}
+	}
+	return int(math.Min(float64(maxNumPeople+1), float64(maxPeople)))
 }

@@ -656,6 +656,7 @@ def get_waiting_status(
     if active_user_count >= WAITING_ROOM_CONFIG["max_active_users"]:
         status = "waiting"
     else:
+        update_last_activity_at(user.id)
         status = "ready"
 
     return WaitingStatusResponse(
