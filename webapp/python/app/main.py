@@ -2,7 +2,7 @@ import bcrypt
 import subprocess
 from typing import Annotated
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 
 from fastapi import FastAPI, HTTPException, Response, Depends
@@ -51,7 +51,7 @@ def post_initialize() -> PostInitializeResponse:
         setting = Setting.model_validate(row)
 
     return PostInitializeResponse(
-        initialized_at=setting.initialized_at,
+        initialized_at=setting.initialized_at.astimezone(timezone.utc),
         app_language="python",
         ui_language="ja"
     )
@@ -290,12 +290,12 @@ def post_reserve(
     update_last_activity_at(user.id)
 
     if not take_lock(req.schedule_id):
-        return {"status": "fail", "error_code": "LOCK_TIMEOUT"}
+        return PostReserveResponse(status="fail", error_code="LOCK_TIMEOUT")
 
     reserved_schedule_id, seats = pick_seats(req.schedule_id, req.from_station_id, req.to_station_id, req.num_people)
 
     if reserved_schedule_id is None:
-        return {"status": "fail", "error_code": "NO_SEAT_AVAILABLE"}
+        return PostReserveResponse(status="fail", error_code="NO_SEAT_AVAILABLE")
 
     departure_at = get_departure_at(reserved_schedule_id, req.from_station_id, req.to_station_id)
     with engine.begin() as conn:
@@ -657,8 +657,6 @@ def get_waiting_status(
         status = "waiting"
     else:
         status = "ready"
-
-    print("active_user_count", active_user_count, "status", status)
 
     return WaitingStatusResponse(
         status=status,

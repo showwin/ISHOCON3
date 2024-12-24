@@ -1,32 +1,35 @@
 package bench
 
 import (
-	"os"
 	"time"
 	"log/slog"
   "math/rand"
+  "encoding/json"
 
 	"golang.org/x/net/context"
 
   "github.com/showwin/ISHOCON3/benchmark/bench/logger"
 
+  "github.com/isucon/isucandar/agent"
   "github.com/isucon/isucandar/worker"
 )
 
 var jst = time.FixedZone("Asia/Tokyo", 9*60*60)
-
-type contextKey string
-
-const (
-    targetURLKey contextKey = "targetURL"
-)
 
 type NewUserCount struct {
   Count int
 }
 
 type Scenario struct {
+  targetURL string
+  initializedAt time.Time
   log logger.Logger
+}
+
+type InitializeResponse struct {
+  InitializedAt time.Time `json:"initialized_at"`
+  AppLanguage  string    `json:"app_language"`
+  UiLanguage   string    `json:"ui_language"`
 }
 
 // type BoughtSeat struct {
@@ -44,28 +47,28 @@ type Scenario struct {
 func Run(targetURL string) {
   rand.Seed(time.Now().UnixNano())
 
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		AddSource: true,
-		Level:     slog.LevelDebug,
-		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-			if a.Key == "time" && a.Value.Kind() == slog.KindTime {
-				return slog.String(a.Key, a.Value.Time().In(jst).Format("15:04:05.000"))
-			}
-			return a
-		},
-	})))
+	agent, err := agent.NewAgent(agent.WithBaseURL(targetURL), agent.WithDefaultTransport())
+	if err != nil {
+		slog.Error("failed to create agent", "error", err.Error())
+	}
+  httpResp, err := HttpPost(context.Background(), agent, "/api/initialize", nil)
+  if err != nil {
+    slog.Error("failed to post /initialize", "error", err.Error())
+  }
+  var initResp InitializeResponse
+  if err := json.Unmarshal(httpResp.Body, &initResp); err != nil {
+    slog.Error("failed to unmarshal response", "error", err.Error())
+  }
 
   ctx, cancel := context.WithTimeout(context.Background(), 60 * time.Second)
   defer cancel()
-
-  ctx = context.WithValue(ctx, targetURLKey, targetURL)
 
   // TODO: maybe better to have more buffer size. Currently 10.
   // boughtSeat := make(chan BoughtSeat, 10)
   // score := make(chan Score, 10)
 
   log := logger.GetLogger()
-  scenario := NewScenario(log)
+  scenario := Scenario{targetURL: targetURL, initializedAt: initResp.InitializedAt, log: log}
 
   worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
 		// RunUserScenario(ctx, boughtSeat, score)
@@ -76,30 +79,5 @@ func Run(targetURL string) {
 	}
   worker.Process(ctx)
 
-
   slog.Info("Benchmark Finished!")
-
-	// getInitialize()
-	// log.Print("Benchmark Start!  Workload: " + strconv.Itoa(workload))
-	// finishTime := time.Now().Add(1 * time.Minute)
-	// validateInitialize()
-	// wg := new(sync.WaitGroup)
-	// m := new(sync.Mutex)
-	// for i := 0; i < workload; i++ {
-	// 	wg.Add(1)
-	// 	if i%3 == 0 {
-	// 		go loopJustLookingScenario(wg, m, finishTime)
-	// 	} else if i%3 == 1 {
-	// 		go loopStalkerScenario(wg, m, finishTime)
-	// 	} else {
-	// 		go loopBakugaiScenario(wg, m, finishTime)
-	// 	}
-	// }
-	// wg.Wait()
-}
-
-
-
-func NewScenario(log logger.Logger) *Scenario {
-    return &Scenario{log: log}
 }
