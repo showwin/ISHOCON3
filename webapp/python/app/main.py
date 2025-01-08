@@ -14,6 +14,7 @@ from .models import Station, User, TrainSchedule, Train, Setting, Reservation, R
 from .middlewares import app_auth_middleware, admin_auth_middleware
 from .sql import engine
 from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image, add_time, update_last_activity_at
+from .payment import capture_payment, payment_app_initialize
 
 app = FastAPI()
 
@@ -42,6 +43,13 @@ def post_initialize() -> PostInitializeResponse:
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             detail=f"Failed to initialize: {result.stdout.decode()}",
+        )
+
+    resp_status = payment_app_initialize()
+    if resp_status != 200:
+        raise HTTPException(
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            detail=f"Failed to initialize payment app: {resp_status}",
         )
 
     with engine.begin() as conn:
@@ -374,6 +382,7 @@ class PostPurchaseRequest(BaseModel):
 
 class PostPurchaseResponse(BaseModel):
     status: str
+    message: str
     entry_token: str
     qr_code_url: str
 
@@ -400,9 +409,16 @@ def post_purchase(
             detail="Invalid reservation"
         )
 
-    # TODO: Payment API をコールする
-    i = random.randint(0, 10)
-    payment_status = "success" if i > 1 else "failed"
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("SELECT * FROM payments WHERE reservation_id = :reservation_id"),
+            {"reservation_id": reservation.id}
+        ).fetchone()
+    payment = Payment.model_validate(row)
+
+    resp = capture_payment(payment.amount, user.global_payment_token)
+    print(resp)
+    payment_status = "success" if resp['status'] == 'accepted' else "failed"
 
     release_lock(reservation.schedule_id)
     if payment_status == "success":
@@ -427,6 +443,7 @@ def post_purchase(
 
     return PostPurchaseResponse(
         status=payment_status,
+        message=resp['message'],
         entry_token=reservation.entry_token if payment_status == "success" else "",
         qr_code_url=f"http://localhost:8080/api/qr/{image_id}.png" if payment_status == "success" else ""
     )

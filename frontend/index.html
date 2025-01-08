@@ -332,6 +332,7 @@
           <p>出発時間: ${info.departure_at}</p>
           <p>座席: ${info.seats.join(', ')}</p>
           <p>合計金額: ${info.total_price}円 ${discountMessage}</p>
+          <div id="purchase-error-msg" class="text-danger mt-2"></div>
         `;
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'btn btn-secondary';
@@ -342,13 +343,12 @@
         purchaseBtn.className = 'btn btn-primary';
         purchaseBtn.textContent = '購入';
         purchaseBtn.addEventListener('click', async () => {
+          purchaseBtn.disabled = true;
           await purchaseTicketAPI(info);
-          reservationModal.hide();
         });
 
         modalFooter.appendChild(cancelBtn);
         modalFooter.appendChild(purchaseBtn);
-
       } else {
         // fail
         const ec = res.error_code || 'UNKNOWN';
@@ -387,8 +387,10 @@
           qr_code_url: purchaseRes.qr_code_url
         });
         renderPurchasedTickets();
+        reservationModal.hide();
       } else {
-        console.error('購入処理でエラー:', purchaseRes);
+        const errorMsgEl = document.getElementById('purchase-error-msg');
+        errorMsgEl.textContent = purchaseRes.message;
       }
     }
 
