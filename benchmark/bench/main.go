@@ -45,7 +45,7 @@ type InitializeResponse struct {
 // }
 
 func Run(targetURL string) {
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano())) // Seed random number generator
 
 	agent, err := agent.NewAgent(agent.WithBaseURL(targetURL), agent.WithDefaultTransport())
 	if err != nil {

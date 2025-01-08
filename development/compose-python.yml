@@ -22,10 +22,22 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # payment_app:
+      #   condition: service_healthy
     environment:
       ISHOCON_DB_HOST: db
     extra_hosts:
       - "host.docker.internal:host-gateway"
+  payment_app:
+    build:
+      context: ../payment_app/
+      dockerfile: ../development/payment_app/Dockerfile
+    image: payment-app
+    ports:
+      - "8081:8080"
+    # healthcheck:
+    #   test: curl -f http://localhost:8080/healthz || exit 1
+    #   start_period: 5s
   db:
     image: public.ecr.aws/docker/library/mysql:8
     environment:
