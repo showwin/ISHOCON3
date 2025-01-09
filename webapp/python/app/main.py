@@ -474,14 +474,17 @@ class PostEntryResponse(BaseModel):
 @app.post("/api/entry")
 def post_entry(
     req: PostEntryRequest
-) -> PostEntryResponse | HTTPException:
+) -> PostEntryResponse:
     with engine.begin() as conn:
         row = conn.execute(
             text("SELECT * FROM reservations WHERE entry_token = :entry_token"),
             {"entry_token": req.entry_token}
         ).fetchone()
     if row is None:
-        return HTTPException(status_code=HTTPStatus.NOT_FOUND)
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"Invalid entry token: {req.entry_token}"
+        )
 
     reservation = Reservation.model_validate(row)
 
@@ -794,7 +797,7 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
             {"name": req.model_name}
         ).fetchone()
     if row is None:
-        return HTTPException(status_code=HTTPStatus.BAD_REQUEST)
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
     with engine.begin() as conn:
         conn.execute(

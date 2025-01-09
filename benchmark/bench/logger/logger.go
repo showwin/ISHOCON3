@@ -73,7 +73,6 @@ func NewSlogLogger() *SlogLogger {
     jst := time.FixedZone("Asia/Tokyo", 9*60*60)
 
     handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-        AddSource: true,
         Level:     slog.LevelInfo,
         ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
             if a.Key == "time" && a.Value.Kind() == slog.KindTime {

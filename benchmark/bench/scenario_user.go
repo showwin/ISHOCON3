@@ -129,7 +129,7 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 		s.log.Error("failed to create agent", err.Error())
 	}
 
-	user, err := s.getRandomUser()
+	user, err := s.getRandomUser(false)
 	if err != nil {
 		s.log.Error("failed to get random user", err.Error())
 	}
@@ -163,7 +163,7 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 		s.runBuyTicketScenario(childCtx, agent, user)
 	}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
 	if err != nil {
-		s.log.Error("failed to create GET /api/schedule worker", err.Error(), "user", user.Name)
+		s.log.Error("failed to create runBuyTicketScenario worker", err.Error(), "user", user.Name)
 	}
 	go func() {
 		ticketScenarioWorker.Process(childCtx)
@@ -220,11 +220,11 @@ func (s *Scenario) purchaseReservation(ctx context.Context, agent *agent.Agent, 
 
 func getApplicationClock(initializedAt time.Time) string {
 	timePassedInSec := time.Now().Sub(initializedAt).Seconds()
-	hours := math.Min(math.Floor(timePassedInSec/6), 24)
+	hours := int(math.Min(math.Floor(timePassedInSec/6), 24))
 	if hours == 24 {
 		return "24:00"
 	}
-	minutes := math.Mod(timePassedInSec, 6) * 10
+	minutes := int(math.Mod(timePassedInSec, 6) * 10)
 	return fmt.Sprintf("%02d:%02d", hours, minutes)
 }
 
@@ -306,7 +306,6 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 
 		// Start worker to entry
 		childCtx := context.Background()
-		// TODO: 一番親のコンテキストを使わないとベンチマーカー全体のタイムアウトが効かないかも
 		entryScenarioWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
 			s.runEntryScenario(childCtx, user, reservation, purchaseResp.EntryToken)
 		}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
@@ -422,7 +421,7 @@ func (s *Scenario) checkSession(ctx context.Context, agent *agent.Agent, user Us
 			return err
 		}
 
-		s.log.Info("GET /api/session", "status", session.Status, "next_check", session.NextCheck, "user", user.Name)
+		s.log.Debug("GET /api/session", "status", session.Status, "next_check", session.NextCheck, "user", user.Name)
 
 		// Check status
 		if session.Status == "session_expired" {
@@ -440,7 +439,7 @@ func (s *Scenario) checkSession(ctx context.Context, agent *agent.Agent, user Us
 	return nil
 }
 
-func (s *Scenario) getRandomUser() (User, error) {
+func (s *Scenario) getRandomUser(forValidation bool) (User, error) {
 	csvFilePath := "./bench/data/users.csv"
 	userTotalCount := 1001
 
@@ -475,7 +474,19 @@ func (s *Scenario) getRandomUser() (User, error) {
 
 	var selectedUser User
 	var count int = 0
-	index := rand.Intn(userTotalCount)
+	var index int
+	// Use different user pool for validation. Mod 23 is for validation.
+	if forValidation {
+		indexSeed := rand.Intn(userTotalCount/23)
+		index = indexSeed * 23
+	} else {
+		for {
+			index = rand.Intn(userTotalCount)
+			if index%23 != 0 {
+				break
+			}
+		}
+	}
 
 	for {
 		record, err := reader.Read()

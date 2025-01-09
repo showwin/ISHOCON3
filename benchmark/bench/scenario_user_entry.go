@@ -36,8 +36,14 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 		s.log.Error("failed to parse departure time", "error", err.Error())
 		return err
 	}
-	currentTime, _ := time.ParseInLocation("15:04", currentTimeStr, jst)
+	currentTime, err := time.ParseInLocation("15:04", currentTimeStr, jst)
+	if err != nil {
+		s.log.Error("failed to parse current time", "error", err.Error())
+		return err
+	}
 	waitTime := departureTime.Add(-1 * time.Hour).Sub(currentTime)
+	s.log.Info("trying to entry", "departureAt", departureAt, "currentTimeStr", currentTimeStr, "departureTime", departureTime, "currentTime", currentTime, "waitTime", waitTime, "entryToken", entryToken)
+
 	if waitTime > 0 {
 		waitTimeInApp := waitTime / 600 // 1 second in app time is 10 minutes in real time
 		s.log.Info("waiting until 1 hour before departure", "wait_time", waitTime.String(), "departure_time", departureAt, "current_time", currentTimeStr)
