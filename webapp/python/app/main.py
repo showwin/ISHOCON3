@@ -392,7 +392,9 @@ def post_purchase(
     user: Annotated[User, Depends(app_auth_middleware)],
     req: PostPurchaseRequest
 ) -> PostPurchaseResponse:
-    # FIXME: レコメンドした場合はチケットが購入されない可能性があるので予約のロックが残ってしまうが、それが発生するケースは少ないと信じて一旦放置
+    # FIXME: レコメンドした場合は20%の確率でチケットが購入されないので、
+    # その場合このエンドポイントが呼ばれず、予約のロックが残ってしまう。
+    # ただ、それが発生するケースは少ないと信じて一旦放置
 
     update_last_activity_at(user.id)
 
@@ -472,7 +474,7 @@ class PostEntryResponse(BaseModel):
 @app.post("/api/entry")
 def post_entry(
     req: PostEntryRequest
-) -> PostEntryResponse:
+) -> PostEntryResponse | HTTPException:
     with engine.begin() as conn:
         row = conn.execute(
             text("SELECT * FROM reservations WHERE entry_token = :entry_token"),
@@ -486,7 +488,7 @@ def post_entry(
     # 列車の発車時間を過ぎていないことを確認
     if reservation.departure_at < get_application_clock():
         return PostEntryResponse(
-            status="TRAIN_DEPARTED",
+            status="train_departed",
         )
 
     with engine.begin() as conn:

@@ -481,7 +481,7 @@
           ticket.is_entered = true;
           renderPurchasedTickets();
           entranceModal.hide();
-        } else if (enterRes.status === 'TRAIN_DEPARTED') {
+        } else if (enterRes.status === 'train_departed') {
           entranceModal.hide();
           // 続けてモーダルを表示できるように前のモーダルが消えたのを確認してから表示
           const handler = () => {

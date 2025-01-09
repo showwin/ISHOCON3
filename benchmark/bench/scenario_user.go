@@ -275,12 +275,12 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		}
 
 		// Handle reservation response
-		var reservation *Reservation
+		var reservation Reservation
 		if reservationResp.Status == "success" && reservationResp.Reserved != nil {
-			reservation = reservationResp.Reserved
+			reservation = *reservationResp.Reserved
 			s.log.Info("Reservation successful", "reservation_id", reservation.ReservationID)
 		} else if reservationResp.Status == "recommend" && reservationResp.Recommend != nil {
-			reservation = reservationResp.Recommend
+			reservation = *reservationResp.Recommend
 			// Decide whether to proceed with recommendation
 			decision := rand.Float64()
 			if decision < 0.2 {
@@ -297,20 +297,28 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		purchaseReq := PurchaseReq{
 			ReservationID: reservation.ReservationID,
 		}
-		_, err = s.purchaseReservation(ctx, agent, user, purchaseReq)
+		purchaseResp, err := s.purchaseReservation(ctx, agent, user, purchaseReq)
 		if err != nil {
 			s.log.Error("Failed to purchase reservation", "reservation_id", reservation.ReservationID, "error", err.Error())
 			return err
 		}
 		s.log.Info("Purchase successful", "reservation_id", reservation.ReservationID)
 
-		// TODO: Run acync worker to entry. Pass qr_code_url and request it before entry.
-		// Check time and if it's exceeded, request refund.
-		// /api/entry
-		// entry_token: "ABC"
+		// Start worker to entry
+		childCtx := context.Background()
+		// TODO: 一番親のコンテキストを使わないとベンチマーカー全体のタイムアウトが効かないかも
+		entryScenarioWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
+			s.runEntryScenario(childCtx, user, reservation, purchaseResp.EntryToken)
+		}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
+		if err != nil {
+			s.log.Error("failed to create entry worker", err.Error(), "user", user.Name)
+		}
+		go func() {
+			entryScenarioWorker.Process(childCtx)
+		}()
 
 		// Determine the next departure time
-		// Since the trip time on the train never exceeds 2 hours, we can use the departure time 2-6 hours
+		// Since the traveling time on the train never exceeds 2 hours, we can use the departure time 2-6 hours
 		hoursPassed := rand.Intn(5) + 2
 
 		departureTime, _ := time.Parse("15:04", reservation.DepartureAt)
@@ -523,8 +531,6 @@ func findEarliestSchedule(from string, to string, after string, schedules []Trai
 	if earliestSchedule == nil {
 		return nil, "", fmt.Errorf("no available schedule found for %s -> %s after %s", from, to, after)
 	}
-
-	// TODO: add some sleep to check if the application have enough session timeout
 
 	return earliestSchedule, departureTime, nil
 }
