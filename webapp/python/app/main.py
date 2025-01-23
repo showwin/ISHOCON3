@@ -105,9 +105,9 @@ def get_schedules() -> ScheduleResponse:
     current_time = get_application_clock()
     current_hour, current_minute = current_time.split(":")
 
-    # 入場までのタイムラグを考慮して、3時間後以降のスケジュールを取得している。
+    # 入場までのタイムラグを考慮して、2時間後以降のスケジュールを取得している。
     # 本当はもっと直近のものを取得してできるだけ早い時間帯に乗車してもらいたい
-    three_hours_later = f"{(int(current_hour) + 3):02d}:{current_minute}"
+    three_hours_later = f"{(int(current_hour) + 2):02d}:{current_minute}"
 
     with engine.begin() as conn:
         rows = conn.execute(

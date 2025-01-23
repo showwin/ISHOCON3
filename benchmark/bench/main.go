@@ -73,7 +73,7 @@ func Run(targetURL string) {
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
 		// RunUserScenario(ctx, boughtSeat, score)
 		scenario.RunUserScenario(ctx)
-	}, worker.WithMaxParallelism(2))
+	}, worker.WithMaxParallelism(8))
 	if err != nil {
 		panic(err)
 	}

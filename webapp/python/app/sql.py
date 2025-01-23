@@ -10,6 +10,6 @@ dbname = os.getenv("ISHOCON_DB_NAME", "ishocon3")
 
 engine = sqlalchemy.create_engine(
     f"mysql+pymysql://{user}:{password}@{host}:{port}/{dbname}",
-    pool_size=20,
+    pool_size=100,
     max_overflow=0
 )
