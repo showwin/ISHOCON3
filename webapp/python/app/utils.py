@@ -201,7 +201,7 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
     allowed_groups = math.ceil(num_seats / train_seat_columns)
     seats = sorted(seats)
     full_price = BASE_TICKET_PRICE * distance * num_seats
-    discounted_price = full_price * 0.5
+    discounted_price = int(full_price * 0.5)
 
     # 必要以上に席が違う列に分かれてしまっている場合は割引料金
     seat_rows = len(set([s.split("-")[0] for s in seats]))

@@ -649,10 +649,10 @@ def post_login(req: LoginRequest, response: Response) -> LoginResponse:
 
 @app.post("/api/logout")
 def post_logout(
-    _: Annotated[User, Depends(app_auth_middleware)],
     response: Response
 ):
     response.set_cookie(key="user_name", value=None, httponly=True)
+    response.set_cookie(key="admin_name", value=None, httponly=True)
     return {"status": "success"}
 
 
@@ -737,7 +737,9 @@ class TrainSalesResponse(BaseModel):
 
 
 @app.get("/api/admin/train_sales")
-def get_admin_train_sales():
+def get_admin_train_sales(
+    _: Annotated[User, Depends(admin_auth_middleware)],
+) -> TrainSalesResponse:
     with engine.begin() as conn:
         rows = conn.execute(
             text("""

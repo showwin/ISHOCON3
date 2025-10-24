@@ -15,6 +15,7 @@
       <span class="navbar-brand">Ishokansen Reservation Admin</span>
       <div class="d-flex ms-auto">
         <span class="text-white me-3">Admin</span>
+        <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
       </div>
     </div>
   </nav>
@@ -103,6 +104,21 @@
       await loadTrainSales();
       await loadTrainModels();
       initAddTrainForm();
+      initLogoutButton();
+    }
+
+    function initLogoutButton() {
+      const logoutButton = document.getElementById('logout-button');
+      logoutButton?.addEventListener('click', async () => {
+        const res = await fetch('/api/logout', {
+          method: 'POST'
+        });
+        if (res.ok) {
+          location.href = '/login.html';
+        } else {
+          console.error('ログアウトに失敗しました');
+        }
+      });
     }
 
     async function loadStats() {
@@ -112,7 +128,7 @@
         document.getElementById('total-sales').textContent = data.total_sales + '円';
         document.getElementById('total-refunds').textContent = data.total_refunds + '円';
       } else {
-        console.error('Failed to load stats');
+        location.href = '/login.html';
       }
     }
 

@@ -173,6 +173,10 @@
 
     async function fetchPurchasedTickets() {
       const res = await fetch('/api/purchased_tickets');
+      if (!res.ok) {
+        location.href = '/login.html';
+        return [];
+      }
       const data = await res.json();
       return data.tickets;
     }
