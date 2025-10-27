@@ -8,19 +8,25 @@ import (
 
 var (
 	targetURL string
+	logLevel  string
 
 	rootCmd = &cobra.Command{
 		Use:   "bench",
 		Short: "A benchmark tool for ISHOCON3",
+		Run: func(cmd *cobra.Command, args []string) {
+			bench.Run(targetURL, logLevel)
+		},
 	}
 )
 
 // Execute executes the root command.
 func Execute() {
-	bench.Run(targetURL)
-	return
+	if err := rootCmd.Execute(); err != nil {
+		panic(err)
+	}
 }
 
 func init() {
 	rootCmd.Flags().StringVar(&targetURL, "target", "http://localhost:8080", "target URL for benchmark")
+	rootCmd.Flags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 }

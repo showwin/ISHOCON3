@@ -24,7 +24,7 @@ WAITING_ROOM_CONFIG = {
 }
 
 SESSION_CONFIG = {
-    "active_time_threshold_sec": 10,
+    "idle_timeout_sec": 10,
     "polling_interval_ms": 500
 }
 
@@ -587,8 +587,8 @@ def get_session(
             next_check=9999999999
         )
 
-    # `active_time_threshold_sec` 秒以上アクティブでないユーザはログアウトさせる
-    if user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["active_time_threshold_sec"])):
+    # `idle_timeout_sec` 秒以上アクティブでないユーザはログアウトさせる
+    if user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"])):
         res.set_cookie(key="user_name", value=None, httponly=True)
         return SessionResponse(
             status="session_expired",
@@ -671,7 +671,7 @@ def get_waiting_status(
     with engine.begin() as conn:
         row = conn.execute(
             text("SELECT count(*) as active_user_count FROM users WHERE last_activity_at >= :threshold"),
-            {"threshold": datetime.now() - timedelta(seconds=SESSION_CONFIG["active_time_threshold_sec"])}
+            {"threshold": datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"])}
         ).fetchone()
     active_user_count = row[0]
 

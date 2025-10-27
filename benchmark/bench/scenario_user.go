@@ -190,7 +190,7 @@ func (s *Scenario) makeReservation(ctx context.Context, agent *agent.Agent, user
 
 	var reservationResp ReservationResp
 	if err := json.Unmarshal(resp.Body, &reservationResp); err != nil {
-		s.log.Error("failed to unmarshal response", err.Error(), "user", user.Name)
+		s.log.Error("failed to unmarshal response", err.Error(), "body", string(resp.Body), "user", user.Name)
 		return nil, err
 	}
 
@@ -477,7 +477,7 @@ func (s *Scenario) getRandomUser(forValidation bool) (User, error) {
 	var index int
 	// Use different user pool for validation. Mod 23 is for validation.
 	if forValidation {
-		indexSeed := rand.Intn(userTotalCount/23)
+		indexSeed := rand.Intn(userTotalCount / 23)
 		index = indexSeed * 23
 	} else {
 		for {

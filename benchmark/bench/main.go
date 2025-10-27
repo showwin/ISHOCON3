@@ -44,7 +44,7 @@ type InitializeResponse struct {
 //   Refund  int
 // }
 
-func Run(targetURL string) {
+func Run(targetURL string, logLevel string) {
 	rand.New(rand.NewSource(time.Now().UnixNano())) // Seed random number generator
 
 	agent, err := agent.NewAgent(agent.WithBaseURL(targetURL), agent.WithDefaultTransport())
@@ -67,7 +67,7 @@ func Run(targetURL string) {
 	// boughtSeat := make(chan BoughtSeat, 10)
 	// score := make(chan Score, 10)
 
-	log := logger.GetLogger()
+	log := logger.GetLogger(logLevel)
 	scenario := Scenario{targetURL: targetURL, initializedAt: initResp.InitializedAt, log: log}
 
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
