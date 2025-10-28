@@ -29,7 +29,7 @@ def get_application_clock() -> str:
     # この世界では1秒が10分に相当する
     # 24:00で世界が止まる
     hours = min(time_passed.seconds // 6, 24)
-    minutes = time_passed.seconds % 6 * 10 if hours < 24 else 0
+    minutes = int((time_passed.seconds + (time_passed.microseconds / 1000000)) % 6 * 10) if hours < 24 else 0
     return f"{hours:02d}:{minutes:02d}"
 
 def get_available_seats_sign(available_seats: int, total_seats: int) -> str:
@@ -41,7 +41,6 @@ def get_available_seats_sign(available_seats: int, total_seats: int) -> str:
 
 
 def take_lock(schedule_id: str) -> bool:
-    print(f"Taking a lock: {schedule_id}")
     retry = 10
     i = 0
     with engine.begin() as conn:
@@ -52,10 +51,11 @@ def take_lock(schedule_id: str) -> bool:
                     {"id": schedule_id}
                 )
             except IntegrityError:
-                time.sleep(0.1)
-                i += 1
-                if i > retry:
+                if i >= retry:
+                    print(f"Failed to take a lock {schedule_id} after {retry} retries")
                     return False
+                i += 1
+                time.sleep(0.1)
             else:
                 break
     return True

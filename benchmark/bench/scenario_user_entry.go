@@ -24,7 +24,8 @@ type RefundReq struct {
 }
 
 type RefundResp struct {
-	Status string `json:"status"`
+	Status    string `json:"status"`
+	ErrorCode string `json:"error_code,omitempty"`
 }
 
 func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation Reservation, entryToken string) error {
@@ -67,11 +68,19 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	if resp.Status == "train_departed" {
 		s.log.Info("Train has already departed. The ticket was too close to departure time.", "token", entryToken, "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
 		s.log.Info("Logging in again to refund", "token", entryToken, "user", user.Name)
-		err := s.runRefundScenario(ctx, user, reservation.ReservationID, reservation.TotalPrice)
-		if err != nil {
-			s.log.Error("Failed to refund", "error", err.Error(), "user", user.Name)
-			// TODO: forcibly stop benchmark
-		}
+		// Use a separate context with timeout for refund to allow it to complete even after main benchmark ends
+		s.refundWg.Add(1)
+		go func() {
+			defer s.refundWg.Done()
+			refundCtx, refundCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer refundCancel()
+			err := s.runRefundScenario(refundCtx, user, reservation.ReservationID, reservation.TotalPrice)
+			if err != nil {
+				s.log.Error("Failed to refund", "error", err.Error(), "user", user.Name)
+				// Stop benchmark
+				s.criticalError <- fmt.Errorf("refund failed for user %s, reservation %s: %w", user.Name, reservation.ReservationID, err)
+			}
+		}()
 		return nil
 	}
 	s.log.Info("Entered the ticket gate", "departure_time", departureAt, "current_time", currentTimeStr, "token", entryToken, "from", reservation.FromStation, "to", reservation.ToStation, "user", user.Name)
@@ -151,10 +160,12 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 
 	// Add refund amount if successful
 	if refundResp.Status == "success" {
+		s.log.Info("Refund request succeeded", "user", user.Name)
 		s.totalRefunds.Add(int64(totalPrice))
-		s.log.Info("Refund recorded", "amount", totalPrice, "user", user.Name)
+		s.log.Debug("Refund recorded", "amount", totalPrice, "user", user.Name)
+	} else {
+		return fmt.Errorf("refund request failed with error_code: %s", refundResp.ErrorCode)
 	}
-	s.log.Info("Refund request succeeded", "user", user.Name)
 
 	// Finish if the session is expired
 	s.checkSession(ctx, agent, user)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"math/rand"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -27,6 +28,8 @@ type Scenario struct {
 	log           logger.Logger
 	totalSales    *atomic.Int64
 	totalRefunds  *atomic.Int64
+	refundWg      *sync.WaitGroup
+	criticalError chan error
 }
 
 type InitializeResponse struct {
@@ -69,6 +72,8 @@ func Run(targetURL string, logLevel string) {
 	// Initialize atomic counters for sales and refunds
 	var totalSales atomic.Int64
 	var totalRefunds atomic.Int64
+	var refundWg sync.WaitGroup
+	criticalError := make(chan error, 1) // Buffered channel to prevent blocking
 
 	log := logger.GetLogger(logLevel)
 	scenario := Scenario{
@@ -77,6 +82,8 @@ func Run(targetURL string, logLevel string) {
 		log:           log,
 		totalSales:    &totalSales,
 		totalRefunds:  &totalRefunds,
+		refundWg:      &refundWg,
+		criticalError: criticalError,
 	}
 
 	currentTimeStr := getApplicationClock(scenario.initializedAt)
@@ -88,10 +95,43 @@ func Run(targetURL string, logLevel string) {
 	if err != nil {
 		panic(err)
 	}
-	worker.Process(ctx)
+
+	// Run worker in a goroutine so we can handle critical errors
+	workerDone := make(chan struct{})
+	go func() {
+		worker.Process(ctx)
+		close(workerDone)
+	}()
+
+	// Wait for either worker completion or critical error
+	select {
+	case <-workerDone:
+		// Normal completion
+	case critErr := <-criticalError:
+		// Critical error occurred, cancel context and stop benchmark
+		slog.Error("Critical error occurred, stopping benchmark", "error", critErr.Error())
+		cancel()
+		// Wait a bit for goroutines to clean up
+		<-workerDone
+	}
 
 	currentTimeStr = getApplicationClock(scenario.initializedAt)
+	slog.Info("Main phase finished. Waiting for pending refunds to complete...", "current_time", currentTimeStr)
+
+	// Wait for all refund operations to complete
+	refundWg.Wait()
+
+	// Check if there was a critical error during refund phase
+	select {
+	case critErr := <-criticalError:
+		slog.Error("Critical error occurred, stopping benchmark", "error", critErr.Error())
+		panic(critErr)
+	default:
+		// No critical error, proceed with final score
+	}
+
 	finalSales := totalSales.Load()
 	finalRefunds := totalRefunds.Load()
+	currentTimeStr = getApplicationClock(scenario.initializedAt)
 	slog.Info("Benchmark Finished!", "score", int64((finalSales-finalRefunds)/100), "total_sales", finalSales, "total_refunds", finalRefunds, "net_revenue", finalSales-finalRefunds, "current_time", currentTimeStr)
 }

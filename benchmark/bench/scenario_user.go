@@ -256,7 +256,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		// Find the earliest schedule for this leg after currentTime
 		schedule, departureTimeStr, err := findEarliestSchedule(from, to, currentTime, schedules.Schedules)
 		if err != nil {
-			s.log.Warn("No available schedule found for leg", "from", from, "to", to, "currentTime", currentTime, "error", err.Error(), "user", user.Name)
+			s.log.Warn("No available schedule found", "from", from, "to", to, "currentTime", currentTime, "error", err.Error(), "user", user.Name)
 			return err
 		}
 

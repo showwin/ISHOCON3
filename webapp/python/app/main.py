@@ -511,6 +511,7 @@ class PostRefundRequest(BaseModel):
 
 class PostRefundResponse(BaseModel):
     status: str
+    error_code: str | None = None
 
 
 @app.post("/api/refund")
@@ -528,9 +529,9 @@ def post_refund(
     reservation = Reservation.model_validate(row)
 
     if reservation.user_id != user.id:
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            detail="Invalid reservation"
+        return PostRefundResponse(
+            status="fail",
+            error_code="INVALID_RESERVATION"
         )
 
     with engine.begin() as conn:
@@ -541,9 +542,9 @@ def post_refund(
     payment = Payment.model_validate(row)
 
     if not payment.is_captured:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Not captured"
+        return PostRefundResponse(
+            status="fail",
+            error_code="NOT_CAPTURED"
         )
 
     with engine.begin() as conn:
@@ -552,9 +553,9 @@ def post_refund(
             {"reservation_id": reservation.id}
         ).fetchone()
     if row is not None:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail="Already entered"
+        return PostRefundResponse(
+            status="fail",
+            error_code="ALREADY_ENTERED"
         )
 
     with engine.begin() as conn:
