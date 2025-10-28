@@ -61,9 +61,16 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	if resp.Status == "train_departed" {
 		s.log.Info("Train has already departed. The ticket was too close to departure time.", "token", entryToken, "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
 		s.log.Info("Logging in again to refund", "token", entryToken, "user", user.Name)
-		s.runRefundScenario(ctx, user, reservation.ReservationID)
+		err := s.runRefundScenario(ctx, user, reservation.ReservationID)
+		if err != nil {
+			s.log.Error("Failed to refund", "error", err.Error(), "user", user.Name)
+			// TODO: forcibly stop benchmark
+		}
+		// TODO: add refunds here
+		return nil
 	}
 	s.log.Info("Entered the ticket gate", "departure_time", departureAt, "current_time", currentTimeStr, "token", entryToken, "from", reservation.FromStation, "to", reservation.ToStation, "user", user.Name)
+	// TODO: add sales here
 
 	return nil
 }

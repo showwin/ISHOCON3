@@ -63,9 +63,8 @@ func Run(targetURL string, logLevel string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// TODO: maybe better to have more buffer size. Currently 10.
-	// boughtSeat := make(chan BoughtSeat, 10)
-	// score := make(chan Score, 10)
+	// sales := make(chan int)
+	// refunds := make(chan int)
 
 	log := logger.GetLogger(logLevel)
 	scenario := Scenario{targetURL: targetURL, initializedAt: initResp.InitializedAt, log: log}
@@ -74,7 +73,7 @@ func Run(targetURL string, logLevel string) {
 	slog.Info("Benchmark Start!", "current_time", currentTimeStr)
 
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
-		// RunUserScenario(ctx, boughtSeat, score)
+		// RunUserScenario(ctx, sales, refunds)
 		scenario.RunUserScenario(ctx)
 	}, worker.WithMaxParallelism(8))
 	if err != nil {
