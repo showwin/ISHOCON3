@@ -61,16 +61,17 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	if resp.Status == "train_departed" {
 		s.log.Info("Train has already departed. The ticket was too close to departure time.", "token", entryToken, "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
 		s.log.Info("Logging in again to refund", "token", entryToken, "user", user.Name)
-		err := s.runRefundScenario(ctx, user, reservation.ReservationID)
+		err := s.runRefundScenario(ctx, user, reservation.ReservationID, reservation.TotalPrice)
 		if err != nil {
 			s.log.Error("Failed to refund", "error", err.Error(), "user", user.Name)
 			// TODO: forcibly stop benchmark
 		}
-		// TODO: add refunds here
 		return nil
 	}
 	s.log.Info("Entered the ticket gate", "departure_time", departureAt, "current_time", currentTimeStr, "token", entryToken, "from", reservation.FromStation, "to", reservation.ToStation, "user", user.Name)
-	// TODO: add sales here
+	// Add sales
+	s.totalSales.Add(int64(reservation.TotalPrice))
+	s.log.Info("Sales recorded", "amount", reservation.TotalPrice, "user", user.Name)
 
 	return nil
 }
@@ -106,7 +107,7 @@ func (s *Scenario) enterGate(ctx context.Context, req EntryReq, user User) (*Ent
 	return &entryResp, nil
 }
 
-func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservationID string) error {
+func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservationID string, totalPrice int) error {
 	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
 	if err != nil {
 		s.log.Error("Failed to create agent", err.Error())
@@ -136,9 +137,16 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 	}()
 
 	// Request refund
-	_, err = s.requestRefund(ctx, agent, user, reservationID)
+	refundResp, err := s.requestRefund(ctx, agent, user, reservationID)
 	if err != nil {
 		s.log.Error("Failed to request refund", err.Error(), "user", user.Name)
+		return err
+	}
+
+	// Add refund amount if successful
+	if refundResp.Status == "success" {
+		s.totalRefunds.Add(int64(totalPrice))
+		s.log.Info("Refund recorded", "amount", totalPrice, "user", user.Name)
 	}
 	s.log.Info("Refund request succeeded", "user", user.Name)
 
