@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/isucon/isucandar/agent"
@@ -33,59 +34,65 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	// Wait until 1 hour before the departure time
 	departureTime, err := time.ParseInLocation("15:04", departureAt, jst)
 	if err != nil {
-		s.log.Error("failed to parse departure time", "error", err.Error())
+		s.log.Error("Failed to parse departure time", "error", err.Error())
 		return err
 	}
 	currentTime, err := time.ParseInLocation("15:04", currentTimeStr, jst)
 	if err != nil {
-		s.log.Error("failed to parse current time", "error", err.Error())
+		s.log.Error("Failed to parse current time", "error", err.Error())
 		return err
 	}
 	waitTime := departureTime.Add(-1 * time.Hour).Sub(currentTime)
-	s.log.Info("trying to entry", "departureAt", departureAt, "currentTimeStr", currentTimeStr, "departureTime", departureTime, "currentTime", currentTime, "waitTime", waitTime, "entryToken", entryToken)
+	s.log.Info("Thinking about whether to enter", "departureAt", departureAt, "currentTimeStr", currentTimeStr, "waitTime", waitTime, "entryToken", entryToken, "user", user.Name)
 
 	if waitTime > 0 {
 		waitTimeInApp := waitTime / 600 // 1 second in app time is 10 minutes in real time
-		s.log.Info("waiting until 1 hour before departure", "wait_time", waitTime.String(), "departure_time", departureAt, "current_time", currentTimeStr)
+		s.log.Info("Waiting until 1 hour before departure", "wait_time", waitTime.String(), "wait_time_in_app", waitTimeInApp.String(), "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
 		time.Sleep(waitTimeInApp)
 	}
 
-	// Entry
-	resp, err := s.entry(ctx, EntryReq{EntryToken: entryToken}, user)
+	// Enter the ticket gate
+	resp, err := s.enterGate(ctx, EntryReq{EntryToken: entryToken}, user)
 	if err != nil {
-		s.log.Error("failed to entry", "error", err.Error(), "token", entryToken)
+		s.log.Error("Failed to enter", "error", err.Error(), "token", entryToken)
 	}
+	currentTimeStr = getApplicationClock(s.initializedAt)
 
 	if resp.Status == "train_departed" {
-		currentTimeStr = getApplicationClock(s.initializedAt)
-		s.log.Info("train has already departed", "token", entryToken, "departure_time", departureAt, "current_time", currentTimeStr)
+		s.log.Info("Train has already departed. The ticket was too close to departure time.", "token", entryToken, "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
+		s.log.Info("Logging in again to refund", "token", entryToken, "user", user.Name)
 		s.runRefundScenario(ctx, user, reservation.ReservationID)
 	}
+	s.log.Info("Entered the ticket gate", "departure_time", departureAt, "current_time", currentTimeStr, "token", entryToken, "from", reservation.FromStation, "to", reservation.ToStation, "user", user.Name)
 
 	return nil
 }
 
-func (s *Scenario) entry(ctx context.Context, req EntryReq, user User) (*EntryResp, error) {
+func (s *Scenario) enterGate(ctx context.Context, req EntryReq, user User) (*EntryResp, error) {
 	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
 	if err != nil {
-		s.log.Error("failed to create agent", err.Error())
+		s.log.Error("Failed to create agent", err.Error())
 	}
 
 	reqBodyBuf, err := json.Marshal(req)
 	if err != nil {
-		s.log.Error("failed to parse JSON", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
+		s.log.Error("Failed to parse JSON", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
 		return nil, err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/entry", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("failed to post /api/entry", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
+		s.log.Error("Failed to post /api/entry", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
 		return nil, err
 	}
 	s.log.Info("POST /api/entry", "statusCode", resp.StatusCode, "token", req.EntryToken, "user", user.Name)
 
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("got %d status code from /api/entry", resp.StatusCode)
+	}
+
 	var entryResp EntryResp
 	if err := json.Unmarshal(resp.Body, &entryResp); err != nil {
-		s.log.Error("failed to unmarshal response", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
+		s.log.Error("Failed to unmarshal response", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
 		return nil, err
 	}
 
@@ -95,7 +102,7 @@ func (s *Scenario) entry(ctx context.Context, req EntryReq, user User) (*EntryRe
 func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservationID string) error {
 	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
 	if err != nil {
-		s.log.Error("failed to create agent", err.Error())
+		s.log.Error("Failed to create agent", err.Error())
 	}
 
 	s.postLogin(ctx, agent, user)
@@ -109,13 +116,13 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 	scheduleWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
 		resp, err := HttpGet(childCtx, agent, "/api/schedules")
 		if err != nil {
-			s.log.Error("failed to get /api/schedules", "error", err.Error(), "user", user.Name)
+			s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
 		}
 		s.log.Debug("GET /api/schedules", "statusCode", resp.StatusCode, "user", user.Name)
 		time.Sleep(1 * time.Second)
 	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(1))
 	if err != nil {
-		s.log.Error("failed to create GET /api/schedule worker", "error", err.Error(), "user", user.Name)
+		s.log.Error("Failed to create GET /api/schedule worker", "error", err.Error(), "user", user.Name)
 	}
 	go func() {
 		scheduleWorker.Process(childCtx)
@@ -124,32 +131,33 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 	// Request refund
 	_, err = s.requestRefund(ctx, agent, user, reservationID)
 	if err != nil {
-		s.log.Error("failed to request refund", err.Error(), "user", user.Name)
+		s.log.Error("Failed to request refund", err.Error(), "user", user.Name)
 	}
+	s.log.Info("Refund request succeeded", "user", user.Name)
 
 	// Finish if the session is expired
 	s.checkSession(ctx, agent, user)
 
-	s.log.Info("user", user.Name, "Session ended", "user", user.Name)
+	s.log.Info("Session ended", "user", user.Name)
 	return nil
 }
 
 func (s *Scenario) requestRefund(ctx context.Context, agent *agent.Agent, user User, reservationID string) (*RefundResp, error) {
 	reqBodyBuf, err := json.Marshal(RefundReq{ReservationID: reservationID})
 	if err != nil {
-		s.log.Error("failed to parse JSON", "error", err.Error(), "user", user.Name)
+		s.log.Error("Failed to parse JSON", "error", err.Error(), "user", user.Name)
 		return nil, err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/refund", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("failed to post /api/refund", "error", err.Error(), "user", user.Name)
+		s.log.Error("Failed to post /api/refund", "error", err.Error(), "user", user.Name)
 		return nil, err
 	}
 	s.log.Info("POST /api/refund", "statusCode", resp.StatusCode, "user", user.Name)
 
 	var refundResp RefundResp
 	if err := json.Unmarshal(resp.Body, &refundResp); err != nil {
-		s.log.Error("failed to unmarshal response", "error", err.Error(), "user", user.Name)
+		s.log.Error("Failed to unmarshal response", "error", err.Error(), "user", user.Name)
 		return nil, err
 	}
 

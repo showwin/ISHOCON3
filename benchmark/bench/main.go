@@ -70,6 +70,9 @@ func Run(targetURL string, logLevel string) {
 	log := logger.GetLogger(logLevel)
 	scenario := Scenario{targetURL: targetURL, initializedAt: initResp.InitializedAt, log: log}
 
+	currentTimeStr := getApplicationClock(scenario.initializedAt)
+	slog.Info("Benchmark Start!", "current_time", currentTimeStr)
+
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
 		// RunUserScenario(ctx, boughtSeat, score)
 		scenario.RunUserScenario(ctx)
@@ -79,5 +82,6 @@ func Run(targetURL string, logLevel string) {
 	}
 	worker.Process(ctx)
 
-	slog.Info("Benchmark Finished!")
+	currentTimeStr = getApplicationClock(scenario.initializedAt)
+	slog.Info("Benchmark Finished!", "current_time", currentTimeStr)
 }

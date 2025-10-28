@@ -119,6 +119,7 @@ type PurchaseReq struct {
 
 type PurchaseResp struct {
 	Status     string `json:"status"`
+	Message    string `json:"message"`
 	EntryToken string `json:"entry_token"`
 	QRCodeURL  string `json:"qr_code_url"`
 }
@@ -126,12 +127,12 @@ type PurchaseResp struct {
 func (s *Scenario) RunUserScenario(ctx context.Context) {
 	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
 	if err != nil {
-		s.log.Error("failed to create agent", err.Error())
+		s.log.Error("Failed to create agent", err.Error())
 	}
 
 	user, err := s.getRandomUser(false)
 	if err != nil {
-		s.log.Error("failed to get random user", err.Error())
+		s.log.Error("Failed to get random user", err.Error())
 	}
 	s.log.Info("START", "user", user.Name)
 
@@ -146,13 +147,13 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 	scheduleWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
 		resp, err := HttpGet(childCtx, agent, "/api/schedules")
 		if err != nil {
-			s.log.Error("failed to get /api/schedules", err.Error(), "user", user.Name)
+			s.log.Error("Failed to get /api/schedules", err.Error(), "user", user.Name)
 		}
 		s.log.Debug("GET /api/schedules", "statusCode", resp.StatusCode, "user", user.Name)
 		time.Sleep(1 * time.Second)
 	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(1))
 	if err != nil {
-		s.log.Error("failed to create GET /api/schedule worker", err.Error(), "user", user.Name)
+		s.log.Error("Failed to create GET /api/schedule worker", err.Error(), "user", user.Name)
 	}
 	go func() {
 		scheduleWorker.Process(childCtx)
@@ -163,7 +164,7 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 		s.runBuyTicketScenario(childCtx, agent, user)
 	}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
 	if err != nil {
-		s.log.Error("failed to create runBuyTicketScenario worker", err.Error(), "user", user.Name)
+		s.log.Error("Failed to create runBuyTicketScenario worker", err.Error(), "user", user.Name)
 	}
 	go func() {
 		ticketScenarioWorker.Process(childCtx)
@@ -172,25 +173,25 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 	// Finish if the session is expired
 	s.checkSession(ctx, agent, user)
 
-	s.log.Info("user", user.Name, "Session ended", "user", user.Name)
+	s.log.Info("Session ended", "user", user.Name)
 }
 
 func (s *Scenario) makeReservation(ctx context.Context, agent *agent.Agent, user User, req ReservationReq) (*ReservationResp, error) {
 	reqBodyBuf, err := json.Marshal(req)
 	if err != nil {
-		s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
+		s.log.Error("Failed to parse JSON", err.Error(), "user", user.Name)
 		return nil, err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/reserve", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("failed to post /api/reserve", err.Error(), "user", user.Name)
+		s.log.Error("Failed to post /api/reserve", err.Error(), "user", user.Name)
 		return nil, err
 	}
 	s.log.Info("POST /api/reserve", "statusCode", resp.StatusCode, "user", user.Name)
 
 	var reservationResp ReservationResp
 	if err := json.Unmarshal(resp.Body, &reservationResp); err != nil {
-		s.log.Error("failed to unmarshal response", err.Error(), "body", string(resp.Body), "user", user.Name)
+		s.log.Error("Failed to unmarshal response", err.Error(), "body", string(resp.Body), "user", user.Name)
 		return nil, err
 	}
 
@@ -200,12 +201,12 @@ func (s *Scenario) makeReservation(ctx context.Context, agent *agent.Agent, user
 func (s *Scenario) purchaseReservation(ctx context.Context, agent *agent.Agent, user User, req PurchaseReq) (*PurchaseResp, error) {
 	reqBodyBuf, err := json.Marshal(req)
 	if err != nil {
-		s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
+		s.log.Error("Failed to parse JSON", err.Error(), "user", user.Name)
 		return nil, err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/purchase", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("failed to post /api/purchase", err.Error(), "user", user.Name)
+		s.log.Error("Failed to post /api/purchase", err.Error(), "user", user.Name)
 		return nil, err
 	}
 	s.log.Info("POST /api/purchase", "statusCode", resp.StatusCode, "user", user.Name)
@@ -233,7 +234,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 
 	resp, err := HttpGet(ctx, agent, "/api/schedules")
 	if err != nil {
-		s.log.Error("failed to get /api/schedules", err.Error(), "user", user.Name)
+		s.log.Error("Failed to get /api/schedules", err.Error(), "user", user.Name)
 	}
 
 	var schedules TrainScheduleResp
@@ -242,7 +243,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 	}
 
 	itinerary := generateRandomItinerary()
-	s.log.Info("Generated itinerary", "stations", itinerary.Stations)
+	s.log.Info("Generated itinerary", "stations", itinerary.Stations, "user", user.Name)
 
 	currentTime := getApplicationClock(s.initializedAt)
 
@@ -259,7 +260,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 			return err
 		}
 
-		s.log.Info("Attempting to reserve ticket", "from", from, "to", to, "departure_at", departureTimeStr, "schedule_id", schedule.ID, "numPeople", numPeople)
+		s.log.Info("Attempting to reserve ticket", "from", from, "to", to, "departure_at", departureTimeStr, "schedule_id", schedule.ID, "number_of_people", numPeople, "user", user.Name)
 
 		// Make reservation request
 		reservationReq := ReservationReq{
@@ -270,7 +271,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		}
 		reservationResp, err := s.makeReservation(ctx, agent, user, reservationReq)
 		if err != nil {
-			s.log.Error("Reservation request failed", "from", from, "to", to, "schedule_id", schedule.ID, "numPeople", numPeople, "error", err.Error())
+			s.log.Error("Reservation request failed", "from", from, "to", to, "schedule_id", schedule.ID, "number_of_people", numPeople, "error", err.Error(), "user", user.Name)
 			return err
 		}
 
@@ -278,18 +279,18 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		var reservation Reservation
 		if reservationResp.Status == "success" && reservationResp.Reserved != nil {
 			reservation = *reservationResp.Reserved
-			s.log.Info("Reservation successful", "reservation_id", reservation.ReservationID)
+			s.log.Info("Reservation succeeded", "reservation_id", reservation.ReservationID, "user", user.Name)
 		} else if reservationResp.Status == "recommend" && reservationResp.Recommend != nil {
 			reservation = *reservationResp.Recommend
 			// Decide whether to proceed with recommendation
 			decision := rand.Float64()
 			if decision < 0.2 {
-				s.log.Warn("Recommendation rejected with 20% probability, cancelling reservation", "recommendation_id", reservation.ReservationID)
+				s.log.Warn("Recommendation rejected with 20% probability, cancelling reservation", "recommendation_id", reservation.ReservationID, "user", user.Name)
 				return nil
 			}
-			s.log.Info("Proceeding with recommended reservation", "reservation_id", reservation.ReservationID)
+			s.log.Info("Proceeding with recommended reservation", "reservation_id", reservation.ReservationID, "user", user.Name)
 		} else {
-			s.log.Error("Reservation failed with unknown status", "status", reservationResp.Status)
+			s.log.Error("Reservation failed with unknown status", "status", reservationResp.Status, "user", user.Name)
 			return nil
 		}
 
@@ -299,10 +300,15 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		}
 		purchaseResp, err := s.purchaseReservation(ctx, agent, user, purchaseReq)
 		if err != nil {
-			s.log.Error("Failed to purchase reservation", "reservation_id", reservation.ReservationID, "error", err.Error())
+			s.log.Error("Failed to purchase reservation", "reservation_id", reservation.ReservationID, "error", err.Error(), "user", user.Name)
 			return err
 		}
-		s.log.Info("Purchase successful", "reservation_id", reservation.ReservationID)
+		if purchaseResp.Status != "success" {
+			s.log.Warn("Failed to purchase reservation", "reservation_id", reservation.ReservationID, "message", purchaseResp.Message, "user", user.Name)
+			s.log.Info("Gave up on buying any more tickets", "user", user.Name)
+			return nil
+		}
+		s.log.Info("Purchase succeeded", "reservation_id", reservation.ReservationID, "user", user.Name)
 
 		// Start worker to entry
 		childCtx := context.Background()
@@ -310,7 +316,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 			s.runEntryScenario(childCtx, user, reservation, purchaseResp.EntryToken)
 		}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
 		if err != nil {
-			s.log.Error("failed to create entry worker", err.Error(), "user", user.Name)
+			s.log.Error("Failed to create entry worker", err.Error(), "user", user.Name)
 		}
 		go func() {
 			entryScenarioWorker.Process(childCtx)
@@ -332,7 +338,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		// Update schedules
 		resp, err := HttpGet(ctx, agent, "/api/schedules")
 		if err != nil {
-			s.log.Error("failed to get /api/schedules", err.Error(), "user", user.Name)
+			s.log.Error("Failed to get /api/schedules", err.Error(), "user", user.Name)
 		}
 
 		if err := json.Unmarshal(resp.Body, &schedules); err != nil {
@@ -346,19 +352,19 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 func (s *Scenario) sendInitRequests(ctx context.Context, agent *agent.Agent, user User) {
 	resp, err := HttpGet(ctx, agent, "/api/purchased_tickets")
 	if err != nil {
-		s.log.Error("failed to get /api/purchased_tickets", err.Error(), "user", user.Name)
+		s.log.Error("Failed to get /api/purchased_tickets", err.Error(), "user", user.Name)
 	}
 	s.log.Info("GET /api/purchased_tickets", "statusCode", resp.StatusCode, "user", user.Name)
 
 	resp, err = HttpGet(ctx, agent, "/api/stations")
 	if err != nil {
-		s.log.Error("failed to get /api/stations", err.Error(), "user", user.Name)
+		s.log.Error("Failed to get /api/stations", err.Error(), "user", user.Name)
 	}
 	s.log.Info("GET /api/stations", "statusCode", resp.StatusCode, "user", user.Name)
 
 	resp, err = HttpGet(ctx, agent, "/api/current_time")
 	if err != nil {
-		s.log.Error("failed to get /api/current_time", err.Error(), "user", user.Name)
+		s.log.Error("Failed to get /api/current_time", err.Error(), "user", user.Name)
 	}
 	s.log.Info("GET /api/current_time", "statusCode", resp.StatusCode, "user", user.Name)
 }
@@ -371,12 +377,12 @@ func (s *Scenario) postLogin(ctx context.Context, agent *agent.Agent, user User)
 	}
 	reqBodyBuf, err := json.Marshal(reqBody)
 	if err != nil {
-		s.log.Error("failed to parse JSON", err.Error(), "user", user.Name)
+		s.log.Error("Failed to parse JSON", err.Error(), "user", user.Name)
 		return err
 	}
 	resp, err := HttpPost(ctx, agent, "/api/login", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("failed to post /api/login", err.Error(), "user", user.Name)
+		s.log.Error("Failed to post /api/login", err.Error(), "user", user.Name)
 		return err
 	}
 	s.log.Info("POST /api/login", "statusCode", resp.StatusCode, "user", user.Name)
@@ -425,13 +431,13 @@ func (s *Scenario) checkSession(ctx context.Context, agent *agent.Agent, user Us
 
 		// Check status
 		if session.Status == "session_expired" {
-			s.log.Info("Session expired. Stopping requests.", "user", user.Name)
+			s.log.Info("Session expired. Logging out.", "user", user.Name)
 			break
 		} else if session.Status == "active" {
 			// Wait next_check milliseconds before next request
 			time.Sleep(time.Duration(session.NextCheck) * time.Millisecond)
 		} else {
-			// Unknown status, decide what to do:
+			// Unknown status. TODO: decide what to do:
 			s.log.Info("Unknown status", session.Status, "Stopping requests.", "user", user.Name)
 			break
 		}
