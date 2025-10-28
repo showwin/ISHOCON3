@@ -28,6 +28,7 @@ type Scenario struct {
 	log           logger.Logger
 	totalSales    *atomic.Int64
 	totalRefunds  *atomic.Int64
+	totalTickets  *atomic.Int64
 	refundWg      *sync.WaitGroup
 	criticalError chan error
 }
@@ -72,6 +73,7 @@ func Run(targetURL string, logLevel string) {
 	// Initialize atomic counters for sales and refunds
 	var totalSales atomic.Int64
 	var totalRefunds atomic.Int64
+	var totalTickets atomic.Int64
 	var refundWg sync.WaitGroup
 	criticalError := make(chan error, 1) // Buffered channel to prevent blocking
 
@@ -82,6 +84,7 @@ func Run(targetURL string, logLevel string) {
 		log:           log,
 		totalSales:    &totalSales,
 		totalRefunds:  &totalRefunds,
+		totalTickets:  &totalTickets,
 		refundWg:      &refundWg,
 		criticalError: criticalError,
 	}
@@ -132,6 +135,7 @@ func Run(targetURL string, logLevel string) {
 
 	finalSales := totalSales.Load()
 	finalRefunds := totalRefunds.Load()
+	finalTickets := totalTickets.Load()
 	currentTimeStr = getApplicationClock(scenario.initializedAt)
-	slog.Info("Benchmark Finished!", "score", int64((finalSales-finalRefunds)/100), "total_sales", finalSales, "total_refunds", finalRefunds, "net_revenue", finalSales-finalRefunds, "current_time", currentTimeStr)
+	slog.Info("Benchmark Finished!", "score", int64((finalSales-finalRefunds)/100), "total_sales", finalSales, "total_refunds", finalRefunds, "net_revenue", finalSales-finalRefunds, "total_tickets", finalTickets, "current_time", currentTimeStr)
 }

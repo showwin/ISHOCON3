@@ -746,16 +746,21 @@ def get_admin_train_sales(
             text("""
                  SELECT
                     t.name as train_name,
-                    SUM(CASE WHEN p.is_captured THEN 1 ELSE 0 END) as tickets_sold,
-                    SUM(CASE WHEN e.id IS NULL AND p.is_captured THEN p.amount ELSE 0 END) as pending_revenue,
-                    SUM(CASE WHEN e.id IS NOT NULL AND p.is_captured THEN p.amount ELSE 0 END) as confirmed_revenue,
-                    SUM(CASE WHEN p.is_refunded THEN p.amount ELSE 0 END) as refunds
+                    COALESCE(SUM(ticket_counts.ticket_count), 0) as tickets_sold,
+                    COALESCE(SUM(CASE WHEN e.id IS NULL AND p.is_captured THEN p.amount ELSE 0 END), 0) as pending_revenue,
+                    COALESCE(SUM(CASE WHEN e.id IS NOT NULL AND p.is_captured THEN p.amount ELSE 0 END), 0) as confirmed_revenue,
+                    COALESCE(SUM(CASE WHEN p.is_refunded THEN p.amount ELSE 0 END), 0) as refunds
                  FROM trains t
                  INNER JOIN train_schedules s ON t.id = s.train_id
                  INNER JOIN reservations r ON s.id = r.schedule_id
                  INNER JOIN payments p ON r.id = p.reservation_id
                  LEFT OUTER JOIN entries e ON r.id = e.reservation_id
-                 GROUP BY t.name
+                 LEFT JOIN (
+                     SELECT reservation_id, COUNT(*) as ticket_count
+                     FROM reservation_seats
+                     GROUP BY reservation_id
+                 ) ticket_counts ON r.id = ticket_counts.reservation_id AND p.is_captured = 1
+                 GROUP BY t.id, t.name
                  """),
         ).fetchall()
         train_sales = [TrainSalesData(

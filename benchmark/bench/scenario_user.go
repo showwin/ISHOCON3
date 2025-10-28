@@ -310,6 +310,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 			return nil
 		}
 		s.log.Info("Purchase succeeded", "reservation_id", reservation.ReservationID, "user", user.Name)
+		s.totalTickets.Add(int64(len(reservation.Seats)))
 
 		// Start worker to entry
 		childCtx := context.Background()
