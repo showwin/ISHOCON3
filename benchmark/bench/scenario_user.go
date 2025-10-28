@@ -290,7 +290,8 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 			}
 			s.log.Info("Proceeding with recommended reservation", "reservation_id", reservation.ReservationID, "user", user.Name)
 		} else {
-			s.log.Error("Reservation failed with unknown status", "status", reservationResp.Status, "user", user.Name)
+			s.log.Error("Reservation failed", "status", reservationResp.Status, "error_code", reservationResp.ErrorCode, "user", user.Name)
+			s.log.Info("A user is angry. Stopped buying any more tickets", "user", user.Name)
 			return nil
 		}
 

@@ -42,14 +42,20 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 		s.log.Error("Failed to parse current time", "error", err.Error())
 		return err
 	}
-	waitTime := departureTime.Add(-1 * time.Hour).Sub(currentTime)
-	s.log.Info("Thinking about whether to enter", "departureAt", departureAt, "currentTimeStr", currentTimeStr, "waitTime", waitTime, "entryToken", entryToken, "user", user.Name)
+	waitTime := max(departureTime.Add(-1*time.Hour).Sub(currentTime), 0)
+	s.log.Info("Thinking about whether to enter", "departureAt", departureAt, "current_time", currentTimeStr, "entryToken", entryToken, "user", user.Name)
 
 	if waitTime > 0 {
 		waitTimeInApp := waitTime / 600 // 1 second in app time is 10 minutes in real time
 		s.log.Info("Waiting until 1 hour before departure", "wait_time", waitTime.String(), "wait_time_in_app", waitTimeInApp.String(), "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
 		time.Sleep(waitTimeInApp)
+	} else {
+		// Moving to the gate takes 10 minutes in real time (1 second in app time)
+		time.Sleep(1 * time.Second)
 	}
+
+	currentTimeStr = getApplicationClock(s.initializedAt)
+	s.log.Info("Arrived at ticket gate", "departureAt", departureAt, "current_time", currentTimeStr, "entryToken", entryToken, "user", user.Name)
 
 	// Enter the ticket gate
 	resp, err := s.enterGate(ctx, EntryReq{EntryToken: entryToken}, user)

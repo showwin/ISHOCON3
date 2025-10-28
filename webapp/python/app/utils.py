@@ -41,7 +41,7 @@ def get_available_seats_sign(available_seats: int, total_seats: int) -> str:
 
 
 def take_lock(schedule_id: str) -> bool:
-    print(f"take_lock: {schedule_id}")
+    print(f"Taking a lock: {schedule_id}")
     retry = 10
     i = 0
     with engine.begin() as conn:
