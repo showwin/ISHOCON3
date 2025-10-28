@@ -13,7 +13,8 @@
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
       <span class="navbar-brand">Ishokansen Reservation Admin</span>
-      <div class="d-flex ms-auto">
+      <div class="d-flex ms-auto align-items-center">
+        <span id="current-time-display" class="text-white me-3">--:--</span>
         <span class="text-white me-3">Admin</span>
         <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
       </div>
@@ -96,6 +97,9 @@
     const MAX_TIMES = 20;
     let departureTimeCount = 0;
     let trainModels = [];
+    let currentHours = 0;
+    let currentMinutes = 0;
+    let clockInterval = null;
 
     document.addEventListener('DOMContentLoaded', init);
 
@@ -103,8 +107,50 @@
       await loadStats();
       await loadTrainSales();
       await loadTrainModels();
+      const currentTime = await fetchCurrentTime();
+      const [h, m] = currentTime.split(':').map(v => parseInt(v, 10));
+      currentHours = h;
+      currentMinutes = m;
+      updateCurrentTimeDisplay();
+      startClockSimulation();
       initAddTrainForm();
       initLogoutButton();
+    }
+
+    async function fetchCurrentTime() {
+      const res = await fetch('/api/current_time');
+      const data = await res.json();
+      return data.current_time;
+    }
+
+    function updateCurrentTimeDisplay() {
+      const hh = String(currentHours).padStart(2, '0');
+      const mm = String(currentMinutes).padStart(2, '0');
+      document.getElementById('current-time-display').textContent = `${hh}:${mm}`;
+    }
+
+    function incrementTimeByOneMinute() {
+      if (currentHours === 24 && currentMinutes === 0) {
+        clearInterval(clockInterval);
+        clockInterval = null;
+        return;
+      }
+
+      currentMinutes += 1;
+      if (currentMinutes >= 60) {
+        currentMinutes = 0;
+        currentHours += 1;
+        if (currentHours > 24) {
+          currentHours = 24;
+          currentMinutes = 0;
+        }
+      }
+
+      updateCurrentTimeDisplay();
+    }
+
+    function startClockSimulation() {
+      clockInterval = setInterval(incrementTimeByOneMinute, 100);
     }
 
     function initLogoutButton() {
