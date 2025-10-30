@@ -2,6 +2,7 @@ package bench
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"sync"
@@ -23,14 +24,16 @@ type NewUserCount struct {
 }
 
 type Scenario struct {
-	targetURL     string
-	initializedAt time.Time
-	log           logger.Logger
-	totalSales    *atomic.Int64
-	totalRefunds  *atomic.Int64
-	totalTickets  *atomic.Int64
-	refundWg      *sync.WaitGroup
-	criticalError chan error
+	targetURL               string
+	initializedAt           time.Time
+	log                     logger.Logger
+	totalSales              *atomic.Int64
+	totalRefunds            *atomic.Int64
+	totalTickets            *atomic.Int64
+	refundWg                *sync.WaitGroup
+	criticalError           chan error
+	currentTicketPhaseIndex *atomic.Int32
+	currentSalesPhaseIndex  *atomic.Int32
 }
 
 type InitializeResponse struct {
@@ -74,23 +77,30 @@ func Run(targetURL string, logLevel string) {
 	var totalSales atomic.Int64
 	var totalRefunds atomic.Int64
 	var totalTickets atomic.Int64
+	var currentTicketPhaseIndex atomic.Int32
+	var currentSalesPhaseIndex atomic.Int32
 	var refundWg sync.WaitGroup
 	criticalError := make(chan error, 1) // Buffered channel to prevent blocking
 
 	log := logger.GetLogger(logLevel)
 	scenario := Scenario{
-		targetURL:     targetURL,
-		initializedAt: initResp.InitializedAt,
-		log:           log,
-		totalSales:    &totalSales,
-		totalRefunds:  &totalRefunds,
-		totalTickets:  &totalTickets,
-		refundWg:      &refundWg,
-		criticalError: criticalError,
+		targetURL:               targetURL,
+		initializedAt:           initResp.InitializedAt,
+		log:                     log,
+		totalSales:              &totalSales,
+		totalRefunds:            &totalRefunds,
+		totalTickets:            &totalTickets,
+		refundWg:                &refundWg,
+		criticalError:           criticalError,
+		currentTicketPhaseIndex: &currentTicketPhaseIndex,
+		currentSalesPhaseIndex:  &currentSalesPhaseIndex,
 	}
 
 	currentTimeStr := getApplicationClock(scenario.initializedAt)
 	slog.Info("Benchmark Start!", "current_time", currentTimeStr)
+
+	// Start admin scenario
+	go scenario.RunAdminScenario(ctx)
 
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
 		scenario.RunUserScenario(ctx)
@@ -136,6 +146,16 @@ func Run(targetURL string, logLevel string) {
 	finalSales := totalSales.Load()
 	finalRefunds := totalRefunds.Load()
 	finalTickets := totalTickets.Load()
+	finalTicketPhase := currentTicketPhaseIndex.Load()
+	finalSalesPhase := currentSalesPhaseIndex.Load()
 	currentTimeStr = getApplicationClock(scenario.initializedAt)
-	slog.Info("Benchmark Finished!", "score", int64((finalSales-finalRefunds)/100), "total_sales", finalSales, "total_refunds", finalRefunds, "net_revenue", finalSales-finalRefunds, "total_tickets", finalTickets, "current_time", currentTimeStr)
+	slog.Info("Benchmark Finished!",
+		"score", int64((finalSales-finalRefunds)/100),
+		"total_sales", finalSales,
+		"total_refunds", finalRefunds,
+		"net_revenue", finalSales-finalRefunds,
+		"total_tickets", finalTickets,
+		"ticket_phase", fmt.Sprintf("%d/%d", finalTicketPhase, len(ticketSoldPhases)),
+		"sales_phase", fmt.Sprintf("%d/%d", finalSalesPhase, len(salesPhases)),
+		"current_time", currentTimeStr)
 }
