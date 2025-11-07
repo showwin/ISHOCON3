@@ -17,6 +17,7 @@ dependencies = [
     "requests>=2.31.0",
     "urllib3>=2.2.3",
     "uvicorn-worker>=0.2.0",
+    "redis>=6.0.0",
 ]
 
 [tool.ruff]

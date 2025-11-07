@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from enum import Enum
 from io import BytesIO
+from typing import TYPE_CHECKING
 
 import qrcode
 from sqlalchemy import text
@@ -10,6 +11,9 @@ from sqlalchemy.exc import IntegrityError
 
 from .models import BaseModel, Reservation, Setting, TrainSchedule
 from .sql import engine
+
+if TYPE_CHECKING:
+    import redis
 
 BASE_TICKET_PRICE = 1000
 
@@ -41,7 +45,7 @@ def get_available_seats_sign(available_seats: int, total_seats: int) -> str:
 
 
 def take_lock(schedule_id: str) -> bool:
-    retry = 10
+    retry = 20
     i = 0
     with engine.begin() as conn:
         while True:
@@ -67,6 +71,53 @@ def release_lock(schedule_id: str) -> None:
             {"id": schedule_id}
         )
 
+def seat_index_to_position(index: int, seat_columns: int) -> str:
+    """Convert seat index (1-based) to seat position (e.g., 1 -> 1-A, 2 -> 1-B)"""
+    seat_column_list = ["A", "B", "C", "D", "E"]
+    row = (index - 1) // seat_columns + 1
+    col = (index - 1) % seat_columns
+    return f"{row}-{seat_column_list[col]}"
+
+def seat_position_to_index(seat: str, seat_columns: int) -> int:
+    """Convert seat position (e.g., 1-A) to seat index (1-based)"""
+    seat_column_list = ["A", "B", "C", "D", "E"]
+    row_str, col_str = seat.split("-")
+    row = int(row_str)
+    col = seat_column_list.index(col_str)
+    return (row - 1) * seat_columns + col + 1
+
+def initialize_schedule_seats(redis_client, schedule: TrainSchedule) -> None:
+    """Initialize Redis list with all available seats for a schedule"""
+    # Get train model info
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("""
+                SELECT tm.seat_rows, tm.seat_columns
+                FROM train_models tm
+                INNER JOIN trains t ON t.model_name = tm.name
+                WHERE t.id = :train_id
+                """),
+            {"train_id": schedule.train_id}
+        ).fetchone()
+
+    if row:
+        seat_rows = row[0]
+        seat_columns = row[1]
+    else:
+        return
+
+    available_seats = []
+    for row_num in range(1, seat_rows + 1):
+        for col_num in range(seat_columns):
+            seat_column_list = ["A", "B", "C", "D", "E"]
+            seat = f"{row_num}-{seat_column_list[col_num]}"
+            available_seats.append(seat)
+
+    # Push all seats to Redis list for this schedule
+    if available_seats:
+        redis_key = f"schedule:{schedule.id}:available_seats"
+        redis_client.rpush(redis_key, *available_seats)
+
 class SeatRowStatus(BaseModel):
     seat_row: int
     a: int
@@ -75,66 +126,51 @@ class SeatRowStatus(BaseModel):
     d: int
     e: int
 
-def pick_seats(schedule_id: str, from_station_id: str, to_station_id: str, num_people: int) -> tuple[str | None, list[str]]:
-    # JA: 乗車区間を考えるのは大変なので、最初から最後まで全部空いているかどうかだけを考える
-    # 本当は乗車区間だけステータスを更新したい…
-    # EN: Considering the boarding section is difficult, so we only consider whether it is completely empty from the beginning to the end.
-    # Ideally, we would like to update the status only for the boarding section...
+def pick_seats(redis_client, schedule_id: str, from_station_id: str, to_station_id: str, num_people: int) -> tuple[str | None, list[str]]:
+    # Use Redis list to atomically pop available seats
+    redis_key = f"schedule:{schedule_id}:available_seats"
 
-    # JA: 全区間空いている席が num_people 以上あるかどうかを確認する
-    # EN: Check if there are at least num_people seats available for the entire section
-    with engine.begin() as conn:
-        available_seats = conn.execute(
-            text("""
-                SELECT SUM(a + b + c + d + e) as total_available_seats
-                FROM (SELECT seat_row, MIN(a_is_available) AS a, MIN(b_is_available) AS b, MIN(c_is_available) AS c, MIN(d_is_available) AS d, MIN(e_is_available) AS e
-                      FROM seat_row_reservations
-                      WHERE schedule_id = :schedule_id GROUP BY seat_row) as available_seats;
-                 """),
-            {"schedule_id": schedule_id}
-        ).fetchone()[0]
-    if available_seats < num_people:
-        # FIXME:
-        # JA: 空席が足りない場合は他のスケジュールをレコメンドしたいが、良いアルゴリズムが思い浮かばないので必要になったら実装する。
-        # EN: When there are not enough available seats, we want to recommend other schedules, but we can't think of a good algorithm, so we will implement it when necessary.
-        return None, []
+    # Atomically pop num_people seats from the list
+    results = redis_client.lpop(redis_key, num_people)
 
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text("""
-                SELECT seat_row, MIN(a_is_available) AS a, MIN(b_is_available) AS b, MIN(c_is_available) AS c, MIN(d_is_available) AS d, MIN(e_is_available) AS e
-                FROM seat_row_reservations
-                WHERE schedule_id = :schedule_id GROUP BY seat_row
-                """),
-            {"schedule_id": schedule_id}
-        ).fetchall()
-    seat_rows = [SeatRowStatus.model_validate(row) for row in rows]
-    reserved_seats = []
-    for _ in range(num_people):
-        for seat_row in seat_rows:
-            if seat_row.a:
-                reserved_seats.append(f"{seat_row.seat_row}-A")
-                seat_row.a = False
-                break
-            if seat_row.b:
-                reserved_seats.append(f"{seat_row.seat_row}-B")
-                seat_row.b = False
-                break
-            if seat_row.c:
-                reserved_seats.append(f"{seat_row.seat_row}-C")
-                seat_row.c = False
-                break
-            if seat_row.d:
-                reserved_seats.append(f"{seat_row.seat_row}-D")
-                seat_row.d = False
-                break
-            if seat_row.e:
-                reserved_seats.append(f"{seat_row.seat_row}-E")
-                seat_row.e = False
-                break
+    # If results is None or we didn't get enough seats
+    if results is None:
+        results = []
+    elif not isinstance(results, list):
+        results = [results]
 
-    # JA: 予約状況を反映
-    # EN: Reflect the reservation status
+    reserved_seats = [seat.decode('utf-8') for seat in results]
+
+    if len(reserved_seats) < num_people:
+        # Not enough seats available, return what we popped back to the list
+        if reserved_seats:
+            redis_client.lpush(redis_key, *reserved_seats)
+
+        # Try to find next available schedule (recommendation)
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT * FROM train_schedules WHERE id = :id"),
+                {"id": schedule_id}
+            ).fetchone()
+            schedule = TrainSchedule.model_validate(row)
+
+            row = conn.execute(
+                text("""
+                    SELECT *
+                    FROM train_schedules
+                    WHERE departure_at_station_a_to_b > :departure_at_station_a_to_b
+                    ORDER BY departure_at_station_a_to_b
+                    LIMIT 1
+                    """),
+                {"departure_at_station_a_to_b": schedule.departure_at_station_a_to_b}
+            ).fetchone()
+
+            if row is None:
+                return None, []
+
+            next_schedule = TrainSchedule.model_validate(row)
+            return pick_seats(redis_client, next_schedule.id, from_station_id, to_station_id, num_people)
+
     for seat in reserved_seats:
         seat_row, column = seat.split("-")
         with engine.begin() as conn:
@@ -146,8 +182,6 @@ def pick_seats(schedule_id: str, from_station_id: str, to_station_id: str, num_p
                     """),
                 {"schedule_id": schedule_id, "seat_row": seat_row}
             )
-
-    release_lock(schedule_id)
 
     return schedule_id, reserved_seats
 
@@ -243,8 +277,8 @@ def get_departure_at(schedule_id: str, from_station_id: str, to_station_id: str)
     return getattr(schedule, f"departure_at_station_{from_station_id.lower()}_to_{next_station.lower()}")
 
 
-def release_seat_reservation(reservation: Reservation) -> None:
-    # リリースする側はダブルブッキングする可能性はないので、ロックは取らない
+def release_seat_reservation(redis_client, reservation: Reservation) -> None:
+    # Get the seats to be released
     with engine.begin() as conn:
         rows = conn.execute(
             text("""
@@ -254,17 +288,14 @@ def release_seat_reservation(reservation: Reservation) -> None:
         ).fetchall()
         seats = [row[0] for row in rows]
 
-    # JA: 今の実装では乗車区間は気にせずに全区間に対して席を取得しているので、全区間に対して席を解放する
-    # EN: In the current implementation, seats are acquired for the entire section without considering the boarding section, so seats are released for the entire section
-    for seat in seats:
-        seat_row, column = seat.split("-")
-        with engine.begin() as conn:
-            conn.execute(
-                text(f"""
-                    UPDATE seat_row_reservations SET {column}_is_available = 1 WHERE schedule_id = :schedule_id AND seat_row = :seat_row
-                    """),
-                {"schedule_id": reservation.schedule_id, "seat_row": seat_row}
-            )
+
+    if not seats:
+        return
+
+    # Push seats back to Redis available seats list
+    redis_key = f"schedule:{reservation.schedule_id}:available_seats"
+    redis_client.lpush(redis_key, *seats)
+
 
 def generate_qr_image(entry_token: str) -> str:
     qr = qrcode.QRCode(
@@ -279,6 +310,7 @@ def generate_qr_image(entry_token: str) -> str:
     byte_io = BytesIO()
     img.save(byte_io, format='PNG')
     return byte_io.getvalue()
+
 
 def add_time(time_str: str, minutes: int) -> str:
     h, m = map(int, time_str.split(":"))

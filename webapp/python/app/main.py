@@ -5,7 +5,9 @@ from typing import Annotated
 
 import bcrypt
 from fastapi import Depends, FastAPI, HTTPException, Response
+import os
 from pydantic import BaseModel
+import redis
 from sqlalchemy import text
 from ulid import ULID
 
@@ -25,13 +27,17 @@ from .utils import (
     release_seat_reservation,
     take_lock,
     update_last_activity_at,
+    initialize_schedule_seats,
 )
 
 app = FastAPI()
+redis_host = os.getenv('ISHOCON_REDIS_HOST', 'redis')
+redis_port = int(os.getenv('ISHOCON_REDIS_PORT', '6379'))
+r = redis.Redis(host=redis_host, port=redis_port, db=0)
 
 WAITING_ROOM_CONFIG = {
-    "max_active_users": 5,
-    "polling_interval_ms": 5000
+    "max_active_users": 150,
+    "polling_interval_ms": 500
 }
 
 SESSION_CONFIG = {
@@ -68,6 +74,19 @@ def post_initialize() -> PostInitializeResponse:
         row = conn.execute(text("SELECT * FROM settings")).fetchone()
         setting = Setting.model_validate(row)
 
+    # Clear all Redis keys and initialize available seats for all schedules
+    r.flushdb()
+
+    # Get all train schedules and initialize Redis lists with available seats
+    with engine.begin() as conn:
+        schedule_rows = conn.execute(
+            text("SELECT * FROM train_schedules")
+        ).fetchall()
+
+    for schedule_row in schedule_rows:
+        schedule = TrainSchedule.model_validate(schedule_row)
+        initialize_schedule_seats(r, schedule)
+
     return PostInitializeResponse(
         initialized_at=setting.initialized_at.astimezone(UTC),
         app_language="python",
@@ -80,6 +99,9 @@ class CurrentTimeResponse(BaseModel):
 
 @app.get("/api/current_time")
 def get_current_time():
+    # r.set("hello", 0)
+    # resp = r.incr("hello")
+    # print(resp)
     return CurrentTimeResponse(
         current_time=get_application_clock()
     )
@@ -312,10 +334,7 @@ def post_reserve(
 ) -> PostReserveResponse:
     update_last_activity_at(user.id)
 
-    if not take_lock(req.schedule_id):
-        return PostReserveResponse(status="fail", error_code="LOCK_TIMEOUT")
-
-    reserved_schedule_id, seats = pick_seats(req.schedule_id, req.from_station_id, req.to_station_id, req.num_people)
+    reserved_schedule_id, seats = pick_seats(r, req.schedule_id, req.from_station_id, req.to_station_id, req.num_people)
 
     if reserved_schedule_id is None:
         return PostReserveResponse(status="fail", error_code="NO_SEAT_AVAILABLE")
@@ -451,7 +470,7 @@ def post_purchase(
                 {"reservation_id": reservation.id}
             )
     else:
-        release_seat_reservation(reservation)
+        release_seat_reservation(r, reservation)
 
     release_lock(reservation.schedule_id)
 
@@ -589,7 +608,7 @@ def post_refund(
         )
 
     if reservation.departure_at > get_application_clock():
-        release_seat_reservation(reservation)
+        release_seat_reservation(r, reservation)
 
     return PostRefundResponse(
         status="success"
@@ -934,4 +953,9 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
                             "e": 1 if train_model.seat_columns >= 5 else 0,
                         },
                     )
+
+    # Initialize Redis counters for each schedule
+    for schedule in schedules:
+        initialize_schedule_seats(r, schedule)
+
     return AddTrainResponse(status="success")
