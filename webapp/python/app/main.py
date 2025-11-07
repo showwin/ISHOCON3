@@ -441,6 +441,7 @@ def post_purchase(
     payment = Payment.model_validate(row)
 
     resp = capture_payment(payment.amount, user.global_payment_token)
+    print(resp)
     payment_status = "success" if resp.status == 'accepted' else "failed"
 
     if payment_status == "success":

@@ -29,6 +29,7 @@ services:
       - 3306:3306
     volumes:
       - ./mysql/db:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
       - ../webapp/sql:/docker-entrypoint-initdb.d
     healthcheck:
       test: mysqladmin ping -h 127.0.0.1 -u ishocon -pishocon

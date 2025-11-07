@@ -147,6 +147,8 @@ def pick_seats(schedule_id: str, from_station_id: str, to_station_id: str, num_p
                 {"schedule_id": schedule_id, "seat_row": seat_row}
             )
 
+    release_lock(schedule_id)
+
     return schedule_id, reserved_seats
 
 
@@ -242,6 +244,7 @@ def get_departure_at(schedule_id: str, from_station_id: str, to_station_id: str)
 
 
 def release_seat_reservation(reservation: Reservation) -> None:
+    # リリースする側はダブルブッキングする可能性はないので、ロックは取らない
     with engine.begin() as conn:
         rows = conn.execute(
             text("""
