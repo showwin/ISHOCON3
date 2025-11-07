@@ -63,9 +63,9 @@ type RegistrationPhase struct {
 var ticketSoldPhases = []RegistrationPhase{
 	{Threshold: 5, TrainCount: 1},
 	{Threshold: 10, TrainCount: 2},
-	{Threshold: 20, TrainCount: 3},
 	{Threshold: 50, TrainCount: 3},
 	{Threshold: 100, TrainCount: 3},
+	{Threshold: 200, TrainCount: 3},
 }
 
 // 68 trains in total
