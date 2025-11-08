@@ -147,13 +147,17 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 	scheduleWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
 		resp, err := HttpGet(childCtx, agent, "/api/schedules")
 		if err != nil {
-			s.log.Error("Failed to get /api/schedules", err.Error(), "user", user.Name)
+			// Ignore context canceled errors (user scenario finished)
+			if childCtx.Err() != nil {
+				return
+			}
+			s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
 		}
 		s.log.Debug("GET /api/schedules", "statusCode", resp.StatusCode, "user", user.Name)
 		time.Sleep(1 * time.Second)
 	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(1))
 	if err != nil {
-		s.log.Error("Failed to create GET /api/schedule worker", err.Error(), "user", user.Name)
+		s.log.Error("Failed to create GET /api/schedule worker", "error", err.Error(), "user", user.Name)
 	}
 	go func() {
 		scheduleWorker.Process(childCtx)
@@ -234,7 +238,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 
 	resp, err := HttpGet(ctx, agent, "/api/schedules")
 	if err != nil {
-		s.log.Error("Failed to get /api/schedules", err.Error(), "user", user.Name)
+		s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
 	}
 
 	var schedules TrainScheduleResp

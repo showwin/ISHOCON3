@@ -104,7 +104,7 @@ func Run(targetURL string, logLevel string) {
 
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
 		scenario.RunUserScenario(ctx)
-	}, worker.WithMaxParallelism(30))
+	}, worker.WithMaxParallelism(100))
 	if err != nil {
 		panic(err)
 	}

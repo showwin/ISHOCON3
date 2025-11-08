@@ -166,3 +166,7 @@ development/mysql/*
 frontend/node_modules/*
 log.txt
 benchmark/benchmark
+
+# While solving
+benchmark/log/*
+dump.rdb
