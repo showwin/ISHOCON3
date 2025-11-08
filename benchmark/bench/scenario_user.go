@@ -154,7 +154,7 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 			}
 			return
 		}
-		s.log.Debug("GET /api/schedules", "statusCode", resp.StatusCode, "user", user.Name)
+		s.log.Debug("GET /api/schedules from worker", "statusCode", resp.StatusCode, "user", user.Name)
 		time.Sleep(1 * time.Second)
 	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(1))
 	if err != nil {
