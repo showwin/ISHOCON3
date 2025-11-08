@@ -315,6 +315,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		}
 		s.log.Info("Purchase succeeded", "reservation_id", reservation.ReservationID, "user", user.Name)
 		s.totalTickets.Add(int64(len(reservation.Seats)))
+		s.totalPurchased.Add(int64(reservation.TotalPrice))
 
 		// Start worker to entry
 		childCtx := context.Background()
@@ -407,7 +408,7 @@ func (s *Scenario) waitInWaitingRoom(ctx context.Context, agent *agent.Agent, us
 			return err
 		}
 
-		s.log.Info("GET /api/waiting_status", "status", waitingStatus.Status, "next_check", waitingStatus.NextCheck, "user", user.Name)
+		s.log.Debug("GET /api/waiting_status", "status", waitingStatus.Status, "next_check", waitingStatus.NextCheck, "user", user.Name)
 
 		if waitingStatus.Status == "ready" {
 			break
