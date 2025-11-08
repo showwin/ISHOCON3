@@ -41,7 +41,7 @@ WAITING_ROOM_CONFIG = {
 }
 
 SESSION_CONFIG = {
-    "idle_timeout_sec": 10,
+    "idle_timeout_sec": 3,
     "polling_interval_ms": 500
 }
 
