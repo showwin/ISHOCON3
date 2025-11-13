@@ -166,6 +166,8 @@ development/mysql/*
 frontend/node_modules/*
 log.txt
 benchmark/benchmark
+webapp/sql/03-users.sql
+webapp/sql/._03-users.sql
 
 # While solving
 benchmark/log/*

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,6 +70,10 @@ func Run(targetURL string, logLevel string) {
 	var initResp InitializeResponse
 	if err := json.Unmarshal(httpResp.Body, &initResp); err != nil {
 		slog.Error("failed to unmarshal response", "error", err.Error())
+	}
+	if httpResp.StatusCode != 200 {
+		slog.Error("initialize returned non-200 status", "status_code", httpResp.StatusCode, "body", string(httpResp.Body))
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

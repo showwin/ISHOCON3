@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/showwin/ISHOCON3/benchmark/bench/data"
 
 	"github.com/isucon/isucandar/agent"
 )
@@ -218,7 +219,7 @@ func (s *Scenario) registerNewTrains(ctx context.Context, agent *agent.Agent, cu
 			csvStart := alreadyRegistered
 			csvCount := phase.TrainCount
 
-			err := s.registerTrainsFromCSV(ctx, agent, "./bench/data/train_configs_ticket_sold.csv", csvStart, csvCount)
+			err := s.registerTrainsFromCSV(ctx, agent, "ticket_sold", csvStart, csvCount)
 			if err != nil {
 				return fmt.Errorf("failed to register trains for ticket phase %d: %w", i, err)
 			}
@@ -252,7 +253,7 @@ func (s *Scenario) registerNewTrains(ctx context.Context, agent *agent.Agent, cu
 			csvStart := alreadyRegistered
 			csvCount := phase.TrainCount
 
-			err := s.registerTrainsFromCSV(ctx, agent, "./bench/data/train_configs_sales.csv", csvStart, csvCount)
+			err := s.registerTrainsFromCSV(ctx, agent, "sales", csvStart, csvCount)
 			if err != nil {
 				return fmt.Errorf("failed to register trains for sales phase %d: %w", i, err)
 			}
@@ -269,16 +270,16 @@ func (s *Scenario) registerNewTrains(ctx context.Context, agent *agent.Agent, cu
 }
 
 // registerTrainsFromCSV reads configs from CSV starting at a given index and registers trains
-func (s *Scenario) registerTrainsFromCSV(ctx context.Context, agent *agent.Agent, csvPath string, startIndex, count int) error {
-	allConfigs, err := readAllTrainConfigs(csvPath)
+func (s *Scenario) registerTrainsFromCSV(ctx context.Context, agent *agent.Agent, csvType string, startIndex, count int) error {
+	allConfigs, err := readAllTrainConfigs(csvType)
 	if err != nil {
-		s.log.Error("Failed to read all train configs", "csv", csvPath, "error", err.Error(), "user", "admin")
+		s.log.Error("Failed to read all train configs", "csv_type", csvType, "error", err.Error(), "user", "admin")
 		return fmt.Errorf("failed to read all train configs: %w", err)
 	}
 
 	endIndex := startIndex + count
 	if endIndex > len(allConfigs) {
-		s.log.Error("Not enough train configs in CSV", "csv", csvPath, "need_end_index", endIndex, "have", len(allConfigs), "user", "admin")
+		s.log.Error("Not enough train configs in CSV", "csv_type", csvType, "need_end_index", endIndex, "have", len(allConfigs), "user", "admin")
 		return fmt.Errorf("not enough train configs in CSV: need %d-%d, but only have %d", startIndex, endIndex, len(allConfigs))
 	}
 
@@ -350,18 +351,23 @@ func generateDepartureTimes(firstTime string) ([]string, error) {
 	return times, nil
 }
 
-func readAllTrainConfigs(csvPath string) ([]TrainConfig, error) {
-	file, err := os.Open(csvPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open %s: %w", csvPath, err)
+func readAllTrainConfigs(csvType string) ([]TrainConfig, error) {
+	// Use embedded CSV data instead of file system
+	var csvData string
+	switch csvType {
+	case "ticket_sold":
+		csvData = data.TrainConfigsTicketSoldCSV
+	case "sales":
+		csvData = data.TrainConfigsSalesCSV
+	default:
+		return nil, fmt.Errorf("unknown CSV type: %s", csvType)
 	}
-	defer file.Close()
 
-	reader := csv.NewReader(file)
+	reader := csv.NewReader(bytes.NewReader([]byte(csvData)))
 	reader.TrimLeadingSpace = true
 
 	// Exclude header
-	_, err = reader.Read()
+	_, err := reader.Read()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read header: %w", err)
 	}

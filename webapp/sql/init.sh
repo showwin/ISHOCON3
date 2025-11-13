@@ -39,6 +39,10 @@ mysql -u"$ISHOCON_DB_USER" \
 		"$OPTIONS" \
 		"$ISHOCON_DB_NAME" < 02-data.sql
 
+if [ ! -f 03-users.sql ]; then
+	tar -zxvf 03-users.sql.tar.gz
+fi
+
 mysql -u"$ISHOCON_DB_USER" \
 		-p"$ISHOCON_DB_PASSWORD" \
 		--host "$ISHOCON_DB_HOST" \

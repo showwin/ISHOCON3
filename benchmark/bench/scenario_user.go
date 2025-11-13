@@ -10,9 +10,10 @@ import (
 	"io"
 	"math"
 	"math/rand"
-	"os"
 	"strconv"
 	"time"
+
+	"github.com/showwin/ISHOCON3/benchmark/bench/data"
 
 	"github.com/isucon/isucandar/agent"
 	"github.com/isucon/isucandar/worker"
@@ -453,16 +454,10 @@ func (s *Scenario) checkSession(ctx context.Context, agent *agent.Agent, user Us
 }
 
 func (s *Scenario) getRandomUser(forValidation bool) (User, error) {
-	csvFilePath := "./bench/data/users.csv"
-	userTotalCount := 1001
+	userTotalCount := 50001
 
-	file, err := os.Open(csvFilePath)
-	if err != nil {
-		return User{}, fmt.Errorf("failed to open CSV file: %w", err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
+	// Use embedded CSV data instead of file system
+	reader := csv.NewReader(bytes.NewReader([]byte(data.UsersCSV)))
 	reader.TrimLeadingSpace = true
 
 	// Read the header line
@@ -504,7 +499,7 @@ func (s *Scenario) getRandomUser(forValidation bool) (User, error) {
 	for {
 		record, err := reader.Read()
 		if err != nil {
-			if errors.Is(err, os.ErrClosed) || errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return User{}, fmt.Errorf("error reading CSV record: %w", err)
