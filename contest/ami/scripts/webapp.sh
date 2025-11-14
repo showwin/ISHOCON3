@@ -3,7 +3,6 @@ set -ex
 
 # Move files
 cp /tmp/.bashrc /home/ishocon/.bashrc
-sudo cp /tmp/nginx.conf /etc/nginx/nginx.conf
 cd /home/ishocon
 tar -zxvf /tmp/webapp.tar.gz
 chown -R ishocon:ishocon /home/ishocon/webapp
