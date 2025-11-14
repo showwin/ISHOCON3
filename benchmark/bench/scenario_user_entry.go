@@ -28,7 +28,7 @@ type RefundResp struct {
 	ErrorCode string `json:"error_code,omitempty"`
 }
 
-func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation Reservation, entryToken string) error {
+func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation Reservation, entryToken string, qrCodeURL string) error {
 	currentTimeStr := getApplicationClock(s.initializedAt)
 	departureAt := reservation.DepartureAt
 
@@ -57,6 +57,14 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 
 	currentTimeStr = getApplicationClock(s.initializedAt)
 	s.log.Info("Arrived at ticket gate", "departureAt", departureAt, "current_time", currentTimeStr, "entryToken", entryToken, "user", user.Name)
+
+	// Get QR code before entering the gate
+	qrResp, err := s.getQRCode(ctx, qrCodeURL, user)
+	if err != nil {
+		s.log.Error("Failed to get QR code", "error", err.Error(), "qrCodeURL", qrCodeURL, "user", user.Name)
+	} else {
+		s.log.Info("GET QR code", "statusCode", qrResp.StatusCode, "qrCodeURL", qrCodeURL, "user", user.Name)
+	}
 
 	// Enter the ticket gate
 	resp, err := s.enterGate(ctx, EntryReq{EntryToken: entryToken}, user)
@@ -120,6 +128,22 @@ func (s *Scenario) enterGate(ctx context.Context, req EntryReq, user User) (*Ent
 	}
 
 	return &entryResp, nil
+}
+
+func (s *Scenario) getQRCode(ctx context.Context, qrCodeURL string, user User) (HttpResponse, error) {
+	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
+	if err != nil {
+		s.log.Error("Failed to create agent", err.Error())
+		return HttpResponse{}, err
+	}
+
+	resp, err := HttpGet(ctx, agent, qrCodeURL)
+	if err != nil {
+		s.log.Error("Failed to get QR code", "error", err.Error(), "qrCodeURL", qrCodeURL, "user", user.Name)
+		return HttpResponse{}, err
+	}
+
+	return resp, nil
 }
 
 func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservationID string, totalPrice int) error {

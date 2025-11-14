@@ -280,8 +280,8 @@ def release_seat_reservation(reservation: Reservation) -> None:
 def generate_qr_image(entry_token: str) -> str:
     qr = qrcode.QRCode(
         version=2,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=100,
         border=4,
     )
     qr.add_data(entry_token)

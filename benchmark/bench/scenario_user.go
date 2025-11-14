@@ -321,7 +321,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		// Start worker to entry
 		childCtx := context.Background()
 		entryScenarioWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
-			s.runEntryScenario(childCtx, user, reservation, purchaseResp.EntryToken)
+			s.runEntryScenario(childCtx, user, reservation, purchaseResp.EntryToken, purchaseResp.QRCodeURL)
 		}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
 		if err != nil {
 			s.log.Error("Failed to create entry worker", err.Error(), "user", user.Name)
