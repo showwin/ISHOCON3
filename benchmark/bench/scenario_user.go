@@ -682,7 +682,7 @@ func decideNumPeople(creditAmount int, itinerary *Itinerary) int {
 	totalDistance := 0
 	baseTicketPrice := 1000
 	minPeople := 1
-	maxPeople := 50
+	maxPeople := 30
 	for i := 0; i < len(itinerary.Stations)-1; i++ {
 		from := itinerary.Stations[i]
 		to := itinerary.Stations[i+1]
