@@ -1,5 +1,10 @@
 import subprocess
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
+import os
+from datetime import datetime, timedelta
+from typing import Annotated
+import random
 from http import HTTPStatus
 from typing import Annotated
 
@@ -31,19 +36,14 @@ from .utils import (
 )
 
 app = FastAPI()
-redis_host = os.getenv('ISHOCON_REDIS_HOST', 'redis')
-redis_port = int(os.getenv('ISHOCON_REDIS_PORT', '6379'))
+redis_host = os.getenv("ISHOCON_REDIS_HOST", "redis")
+redis_port = int(os.getenv("ISHOCON_REDIS_PORT", "6379"))
 r = redis.Redis(host=redis_host, port=redis_port, db=0)
 
-WAITING_ROOM_CONFIG = {
-    "max_active_users": 150,
-    "polling_interval_ms": 500
-}
+WAITING_ROOM_CONFIG = {"max_active_users": 150, "polling_interval_ms": 500}
 
-SESSION_CONFIG = {
-    "idle_timeout_sec": 3,
-    "polling_interval_ms": 500
-}
+SESSION_CONFIG = {"idle_timeout_sec": 3, "polling_interval_ms": 500}
+
 
 class PostInitializeResponse(BaseModel):
     initialized_at: datetime
@@ -52,9 +52,7 @@ class PostInitializeResponse(BaseModel):
 
 @app.post("/api/initialize")
 def post_initialize() -> PostInitializeResponse:
-    result = subprocess.run(
-        "/home/ishocon/webapp/sql/init.sh", stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-    )
+    result = subprocess.run("/home/ishocon/webapp/sql/init.sh", stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if result.returncode != 0:
         raise HTTPException(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
@@ -79,9 +77,7 @@ def post_initialize() -> PostInitializeResponse:
 
     # Get all train schedules and initialize Redis lists with available seats
     with engine.begin() as conn:
-        schedule_rows = conn.execute(
-            text("SELECT * FROM train_schedules")
-        ).fetchall()
+        schedule_rows = conn.execute(text("SELECT * FROM train_schedules")).fetchall()
 
     for schedule_row in schedule_rows:
         schedule = TrainSchedule.model_validate(schedule_row)
@@ -102,9 +98,7 @@ def get_current_time():
     # r.set("hello", 0)
     # resp = r.incr("hello")
     # print(resp)
-    return CurrentTimeResponse(
-        current_time=get_application_clock()
-    )
+    return CurrentTimeResponse(current_time=get_application_clock())
 
 
 class StationsResponse(BaseModel):
@@ -114,9 +108,7 @@ class StationsResponse(BaseModel):
 @app.get("/api/stations")
 def get_stations() -> StationsResponse:
     with engine.begin() as conn:
-        rows = conn.execute(
-            text("SELECT * FROM stations")
-        ).fetchall()
+        rows = conn.execute(text("SELECT * FROM stations")).fetchall()
     stations = [Station.model_validate(r) for r in rows]
     return StationsResponse(stations=stations)
 
@@ -151,7 +143,7 @@ def get_schedules() -> ScheduleResponse:
             ORDER BY departure_at_station_a_to_b
             LIMIT 10
             """),
-            {"time": two_hours_later}
+            {"time": two_hours_later},
         ).fetchall()
     schedules = [TrainSchedule.model_validate(r) for r in rows]
 
@@ -165,35 +157,28 @@ def get_schedules() -> ScheduleResponse:
         train = Train.model_validate(row)
 
         available_seats_between_stations = {
-            "A->B": "",
-            "B->C": "",
-            "C->D": "",
-            "D->E": "",
-            "E->D": "",
-            "D->C": "",
-            "C->B": "",
-            "B->A": "",
+            "A->B": 0,
+            "B->C": 0,
+            "C->D": 0,
+            "D->E": 0,
+            "E->D": 0,
+            "D->C": 0,
+            "C->B": 0,
+            "B->A": 0,
         }
+
+        # Get available seats count from Redis
+        redis_key = f"schedule:{schedule.id}:available_seats"
+        available_seats = r.llen(redis_key)
+
         for stations in available_seats_between_stations.keys():
             with engine.begin() as conn:
-                row = conn.execute(
-                    text("""
-                        SELECT SUM(a_is_available) + SUM(b_is_available) + SUM(c_is_available) + SUM(d_is_available) + SUM(e_is_available) AS available_seats
-                        FROM seat_row_reservations
-                        WHERE schedule_id = :schedule_id
-                        AND from_station_id = :from_station
-                        AND to_station_id = :to_station
-                    """),
-                    {"schedule_id": schedule.id, "from_station": stations.split("->")[0], "to_station": stations.split("->")[1]},
-                ).fetchone()
-                available_seats = row[0]
-
                 row = conn.execute(
                     text("""
                         SELECT train_models.seat_rows * train_models.seat_columns AS total_seats
                         FROM trains
                         INNER JOIN train_models
-                        ON trains.model = train_models.name
+                        ON trains.model_name = train_models.name
                         WHERE trains.id = :train_id;
                     """),
                     {"train_id": train.id},
@@ -201,31 +186,61 @@ def get_schedules() -> ScheduleResponse:
                 total_seats = row[0]
             available_seats_between_stations[stations] = get_available_seats_sign(available_seats, total_seats)
 
-        trains.append({
-            "id": schedule.id,
-            "availability": {
-                "Arena->Bridge": available_seats_between_stations["A->B"],
-                "Bridge->Cave": available_seats_between_stations["B->C"],
-                "Cave->Dock": available_seats_between_stations["C->D"],
-                "Dock->Edge": available_seats_between_stations["D->E"],
-                "Edge->Dock": available_seats_between_stations["E->D"],
-                "Dock->Cave": available_seats_between_stations["D->C"],
-                "Cave->Bridge": available_seats_between_stations["C->B"],
-                "Bridge->Arena": available_seats_between_stations["B->A"],
-            },
-            "departure_at": {
-                "Arena->Bridge": schedule.departure_at_station_a_to_b,
-                "Bridge->Cave": schedule.departure_at_station_b_to_c,
-                "Cave->Dock": schedule.departure_at_station_c_to_d,
-                "Dock->Edge": schedule.departure_at_station_d_to_e,
-                "Edge->Dock": schedule.departure_at_station_e_to_d,
-                "Dock->Cave": schedule.departure_at_station_d_to_c,
-                "Cave->Bridge": schedule.departure_at_station_c_to_b,
-                "Bridge->Arena": schedule.departure_at_station_b_to_a
+        # Get total seats from database
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT seat_rows * seat_columns AS total_seats
+                    FROM trains
+                    INNER JOIN train_models
+                    ON trains.model_name = train_models.name
+                    WHERE id = :train_id;
+                """),
+                {"train_id": train.id},
+            ).fetchone()
+            total_seats = row[0]
+
+        # Use the same availability for all station pairs (Redis doesn't track from/to stations)
+        availability_sign = get_available_seats_sign(available_seats, total_seats)
+        available_seats_between_stations = {
+            "A->B": availability_sign,
+            "B->C": availability_sign,
+            "C->D": availability_sign,
+            "D->E": availability_sign,
+            "E->D": availability_sign,
+            "D->C": availability_sign,
+            "C->B": availability_sign,
+            "B->A": availability_sign,
+        }
+
+        trains.append(
+            {
+                "id": schedule.id,
+                "availability": {
+                    "Arena->Bridge": available_seats_between_stations["A->B"],
+                    "Bridge->Cave": available_seats_between_stations["B->C"],
+                    "Cave->Dock": available_seats_between_stations["C->D"],
+                    "Dock->Edge": available_seats_between_stations["D->E"],
+                    "Edge->Dock": available_seats_between_stations["E->D"],
+                    "Dock->Cave": available_seats_between_stations["D->C"],
+                    "Cave->Bridge": available_seats_between_stations["C->B"],
+                    "Bridge->Arena": available_seats_between_stations["B->A"],
+                },
+                "departure_at": {
+                    "Arena->Bridge": schedule.departure_at_station_a_to_b,
+                    "Bridge->Cave": schedule.departure_at_station_b_to_c,
+                    "Cave->Dock": schedule.departure_at_station_c_to_d,
+                    "Dock->Edge": schedule.departure_at_station_d_to_e,
+                    "Edge->Dock": schedule.departure_at_station_e_to_d,
+                    "Dock->Cave": schedule.departure_at_station_d_to_c,
+                    "Cave->Bridge": schedule.departure_at_station_c_to_b,
+                    "Bridge->Arena": schedule.departure_at_station_b_to_a,
+                },
             }
-        })
+        )
 
     return ScheduleResponse(schedules=trains)
+
 
 class TicketData(BaseModel):
     reservation_id: str
@@ -278,12 +293,12 @@ def get_purchased_tickets(
                  WHERE r.user_id = :user_id
                  AND p.is_captured = true
                  """),
-            {"user_id": user.id}
+            {"user_id": user.id},
         ).fetchall()
         for r in rows:
             seat_rows = conn.execute(
                 text("SELECT seat FROM reservation_seats WHERE reservation_id = :reservation_id"),
-                {"reservation_id": r[0]}
+                {"reservation_id": r[0]},
             ).fetchall()
             ticket = TicketData(
                 reservation_id=r[0],
@@ -295,7 +310,7 @@ def get_purchased_tickets(
                 total_price=r[5],
                 entry_token=r[6],
                 qr_code_url=f"/api/qr/{r[7]}.png",
-                is_entered=r[8]
+                is_entered=r[8],
             )
             tickets.append(ticket)
 
@@ -328,10 +343,7 @@ class PostReserveResponse(BaseModel):
 
 
 @app.post("/api/reserve")
-def post_reserve(
-    user: Annotated[User, Depends(app_auth_middleware)],
-    req: PostReserveRequest
-) -> PostReserveResponse:
+def post_reserve(user: Annotated[User, Depends(app_auth_middleware)], req: PostReserveRequest) -> PostReserveResponse:
     update_last_activity_at(user.id)
 
     reserved_schedule_id, seats = pick_seats(r, req.schedule_id, req.from_station_id, req.to_station_id, req.num_people)
@@ -354,14 +366,11 @@ def post_reserve(
                 "from_station_id": req.from_station_id,
                 "to_station_id": req.to_station_id,
                 "departure_at": departure_at,
-                "entry_token": str(ULID())
-            }
+                "entry_token": str(ULID()),
+            },
         )
     with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM reservations WHERE id = :id"),
-            {"id": reservation_id}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM reservations WHERE id = :id"), {"id": reservation_id}).fetchone()
         reservation = Reservation.model_validate(row)
 
         for seat in seats:
@@ -370,7 +379,7 @@ def post_reserve(
                     INSERT INTO reservation_seats (reservation_id, seat)
                     VALUES (:reservation_id, :seat)
                     """),
-                {"reservation_id": reservation.id, "seat": seat}
+                {"reservation_id": reservation.id, "seat": seat},
             )
 
     with engine.begin() as conn:
@@ -380,19 +389,15 @@ def post_reserve(
                 INSERT INTO payments (user_id, reservation_id, amount)
                 VALUES (:user_id, :reservation_id, :amount)
                 """),
-            {"user_id": user.id, "reservation_id": reservation.id, "amount": total_price}
+            {"user_id": user.id, "reservation_id": reservation.id, "amount": total_price},
         )
 
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT * FROM stations WHERE id = :id"),
-            {"id": reservation.from_station_id}
+            text("SELECT * FROM stations WHERE id = :id"), {"id": reservation.from_station_id}
         ).fetchone()
         from_station = Station.model_validate(row)
-        row = conn.execute(
-            text("SELECT * FROM stations WHERE id = :id"),
-            {"id": reservation.to_station_id}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM stations WHERE id = :id"), {"id": reservation.to_station_id}).fetchone()
         to_station = Station.model_validate(row)
 
     status = "success" if reservation.schedule_id == req.schedule_id else "recommend"
@@ -404,7 +409,7 @@ def post_reserve(
         departure_at=reservation.departure_at,
         seats=seats,
         total_price=total_price,
-        is_discounted=is_discounted
+        is_discounted=is_discounted,
     )
 
     return PostReserveResponse(
@@ -427,8 +432,7 @@ class PostPurchaseResponse(BaseModel):
 
 @app.post("/api/purchase")
 def post_purchase(
-    user: Annotated[User, Depends(app_auth_middleware)],
-    req: PostPurchaseRequest
+    user: Annotated[User, Depends(app_auth_middleware)], req: PostPurchaseRequest
 ) -> PostPurchaseResponse:
     # FIXME:
     # JA: レコメンドした場合は20%の確率でチケットが購入されないので、その場合このエンドポイントが呼ばれず、予約のロックが残ってしまう。
@@ -440,34 +444,27 @@ def post_purchase(
     update_last_activity_at(user.id)
 
     with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM reservations WHERE id = :id"),
-            {"id": req.reservation_id}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM reservations WHERE id = :id"), {"id": req.reservation_id}).fetchone()
     reservation = Reservation.model_validate(row)
 
     if reservation.user_id != user.id:
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            detail="Invalid reservation"
-        )
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid reservation")
 
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT * FROM payments WHERE reservation_id = :reservation_id"),
-            {"reservation_id": reservation.id}
+            text("SELECT * FROM payments WHERE reservation_id = :reservation_id"), {"reservation_id": reservation.id}
         ).fetchone()
     payment = Payment.model_validate(row)
 
     resp = capture_payment(payment.amount, user.global_payment_token)
     print(resp)
-    payment_status = "success" if resp.status == 'accepted' else "failed"
+    payment_status = "success" if resp.status == "accepted" else "failed"
 
     if payment_status == "success":
         with engine.begin() as conn:
             conn.execute(
                 text("UPDATE payments SET is_captured = true WHERE reservation_id = :reservation_id"),
-                {"reservation_id": reservation.id}
+                {"reservation_id": reservation.id},
             )
     else:
         release_seat_reservation(r, reservation)
@@ -482,23 +479,21 @@ def post_purchase(
                 INSERT INTO reservation_qr_images
                 VALUES (:id, :reservation_id, :qr_image)
                 """),
-            {"id": image_id, "reservation_id": reservation.id, "qr_image": qr_image}
+            {"id": image_id, "reservation_id": reservation.id, "qr_image": qr_image},
         )
 
     return PostPurchaseResponse(
         status=payment_status,
         message=resp.message,
         entry_token=reservation.entry_token if payment_status == "success" else "",
-        qr_code_url=f"/api/qr/{image_id}.png" if payment_status == "success" else ""
+        qr_code_url=f"/api/qr/{image_id}.png" if payment_status == "success" else "",
     )
+
 
 @app.get("/api/qr/{qr_id}.png")
 def get_qr(qr_id: str):
     with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM reservation_qr_images WHERE id = :id"),
-            {"id": qr_id}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM reservation_qr_images WHERE id = :id"), {"id": qr_id}).fetchone()
     if row is None:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND)
     qr_image = ReservationQrImage.model_validate(row)
@@ -514,19 +509,13 @@ class PostEntryResponse(BaseModel):
 
 
 @app.post("/api/entry")
-def post_entry(
-    req: PostEntryRequest
-) -> PostEntryResponse:
+def post_entry(req: PostEntryRequest) -> PostEntryResponse:
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT * FROM reservations WHERE entry_token = :entry_token"),
-            {"entry_token": req.entry_token}
+            text("SELECT * FROM reservations WHERE entry_token = :entry_token"), {"entry_token": req.entry_token}
         ).fetchone()
     if row is None:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail=f"Invalid entry token: {req.entry_token}"
-        )
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"Invalid entry token: {req.entry_token}")
 
     reservation = Reservation.model_validate(row)
 
@@ -543,7 +532,7 @@ def post_entry(
                 INSERT INTO entries (reservation_id)
                 VALUES (:reservation_id)
                 """),
-            {"reservation_id": reservation.id}
+            {"reservation_id": reservation.id},
         )
     return PostEntryResponse(status="success")
 
@@ -558,61 +547,42 @@ class PostRefundResponse(BaseModel):
 
 
 @app.post("/api/refund")
-def post_refund(
-    user: Annotated[User, Depends(app_auth_middleware)],
-    req: PostRefundRequest
-) -> PostRefundResponse:
+def post_refund(user: Annotated[User, Depends(app_auth_middleware)], req: PostRefundRequest) -> PostRefundResponse:
     update_last_activity_at(user.id)
 
     with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM reservations WHERE id = :id"),
-            {"id": req.reservation_id}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM reservations WHERE id = :id"), {"id": req.reservation_id}).fetchone()
     reservation = Reservation.model_validate(row)
 
     if reservation.user_id != user.id:
-        return PostRefundResponse(
-            status="fail",
-            error_code="INVALID_RESERVATION"
-        )
+        return PostRefundResponse(status="fail", error_code="INVALID_RESERVATION")
 
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT * FROM payments WHERE reservation_id = :reservation_id"),
-            {"reservation_id": reservation.id}
+            text("SELECT * FROM payments WHERE reservation_id = :reservation_id"), {"reservation_id": reservation.id}
         ).fetchone()
     payment = Payment.model_validate(row)
 
     if not payment.is_captured:
-        return PostRefundResponse(
-            status="fail",
-            error_code="NOT_CAPTURED"
-        )
+        return PostRefundResponse(status="fail", error_code="NOT_CAPTURED")
 
     with engine.begin() as conn:
         row = conn.execute(
-            text("SELECT * FROM entries WHERE reservation_id = :reservation_id"),
-            {"reservation_id": reservation.id}
+            text("SELECT * FROM entries WHERE reservation_id = :reservation_id"), {"reservation_id": reservation.id}
         ).fetchone()
     if row is not None:
-        return PostRefundResponse(
-            status="fail",
-            error_code="ALREADY_ENTERED"
-        )
+        return PostRefundResponse(status="fail", error_code="ALREADY_ENTERED")
 
     with engine.begin() as conn:
         conn.execute(
             text("UPDATE payments SET is_captured = false, is_refunded = true WHERE reservation_id = :reservation_id"),
-            {"reservation_id": reservation.id}
+            {"reservation_id": reservation.id},
         )
 
     if reservation.departure_at > get_application_clock():
         release_seat_reservation(r, reservation)
 
-    return PostRefundResponse(
-        status="success"
-    )
+    return PostRefundResponse(status="success")
 
 
 class SessionResponse(BaseModel):
@@ -621,33 +591,24 @@ class SessionResponse(BaseModel):
 
 
 @app.get("/api/session")
-def get_session(
-    user: Annotated[User, Depends(app_auth_middleware)],
-    res: Response
-) -> SessionResponse:
+def get_session(user: Annotated[User, Depends(app_auth_middleware)], res: Response) -> SessionResponse:
     # JA: 開発中に短時間でセッションが切れるのは不便なので、ishoconユーザはセッションを切れないようにしておくと便利
     # EN: During development, it is inconvenient for the session to expire in a short time,
     if user.name == "ishocon":
-        return SessionResponse(
-            status="active",
-            next_check=9999999999
-        )
+        return SessionResponse(status="active", next_check=9999999999)
 
     # JA: `idle_timeout_sec` 秒以上アクティブでないユーザはログアウトさせる
     # EN: Log out users who have been inactive for more than `idle_timeout_sec` seconds
-    if user.last_activity_at and (user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"]))):
+    if user.last_activity_at and (
+        user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"]))
+    ):
         res.set_cookie(key="user_name", value=None, httponly=True)
-        return SessionResponse(
-            status="session_expired",
-            next_check=SESSION_CONFIG["polling_interval_ms"]
-        )
-    return SessionResponse(
-        status="active",
-        next_check=SESSION_CONFIG["polling_interval_ms"]
-    )
+        return SessionResponse(status="session_expired", next_check=SESSION_CONFIG["polling_interval_ms"])
+    return SessionResponse(status="active", next_check=SESSION_CONFIG["polling_interval_ms"])
 
 
 ## Login Page
+
 
 class LoginRequest(BaseModel):
     name: str
@@ -669,18 +630,12 @@ class LoginResponse(BaseModel):
 @app.post("/api/admin/login")
 def post_login(req: LoginRequest, response: Response) -> LoginResponse:
     with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM users WHERE name = :name"),
-            {"name": req.name}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM users WHERE name = :name"), {"name": req.name}).fetchone()
     user = User.model_validate(row)
 
     hashed_password = bcrypt.hashpw(req.password.encode(), user.salt.encode()).decode()
     if user.hashed_password != hashed_password:
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED,
-            detail="Invalid name or password"
-        )
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid name or password")
 
     if user.is_admin:
         response.set_cookie(key="admin_name", value=user.name, httponly=True)
@@ -689,22 +644,18 @@ def post_login(req: LoginRequest, response: Response) -> LoginResponse:
 
     update_last_activity_at(user.id)
 
-    return LoginResponse(
-        status="success",
-        user=UserData(id=user.id, name=user.name, is_admin=user.is_admin)
-    )
+    return LoginResponse(status="success", user=UserData(id=user.id, name=user.name, is_admin=user.is_admin))
 
 
 @app.post("/api/logout")
-def post_logout(
-    response: Response
-):
+def post_logout(response: Response):
     response.set_cookie(key="user_name", value=None, httponly=True)
     response.set_cookie(key="admin_name", value=None, httponly=True)
     return {"status": "success"}
 
 
 ## Waiting Room
+
 
 class WaitingStatusResponse(BaseModel):
     status: str
@@ -715,11 +666,10 @@ class WaitingStatusResponse(BaseModel):
 def get_waiting_status(
     user: Annotated[User, Depends(app_auth_middleware)],
 ) -> WaitingStatusResponse:
-
     with engine.begin() as conn:
         row = conn.execute(
             text("SELECT count(*) as active_user_count FROM users WHERE last_activity_at >= :threshold"),
-            {"threshold": datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"])}
+            {"threshold": datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"])},
         ).fetchone()
     active_user_count = row[0]
 
@@ -729,13 +679,11 @@ def get_waiting_status(
         update_last_activity_at(user.id)
         status = "ready"
 
-    return WaitingStatusResponse(
-        status=status,
-        next_check=WAITING_ROOM_CONFIG["polling_interval_ms"]
-    )
+    return WaitingStatusResponse(status=status, next_check=WAITING_ROOM_CONFIG["polling_interval_ms"])
 
 
 ## Admin API
+
 
 class StatsResponse(BaseModel):
     total_sales: int
@@ -767,10 +715,7 @@ def get_admin_stats(
         ).fetchone()
         total_refunds = row[0] if row[0] else 0
 
-    return StatsResponse(
-        total_sales=total_sales,
-        total_refunds=total_refunds
-    )
+    return StatsResponse(total_sales=total_sales, total_refunds=total_refunds)
 
 
 class TrainSalesData(BaseModel):
@@ -811,13 +756,12 @@ def get_admin_train_sales(
                  GROUP BY t.id, t.name
                  """),
         ).fetchall()
-        train_sales = [TrainSalesData(
-            train_name=r[0],
-            tickets_sold=r[1],
-            pending_revenue=r[2],
-            confirmed_revenue=r[3],
-            refunds=r[4]
-        ) for r in rows]
+        train_sales = [
+            TrainSalesData(
+                train_name=r[0], tickets_sold=r[1], pending_revenue=r[2], confirmed_revenue=r[3], refunds=r[4]
+            )
+            for r in rows
+        ]
     return TrainSalesResponse(trains=train_sales)
 
 
@@ -828,9 +772,7 @@ class TrainData(BaseModel):
 @app.get("/api/train_models")
 def get_train_models() -> TrainData:
     with engine.begin() as conn:
-        rows = conn.execute(
-            text("SELECT * FROM train_models")
-        ).fetchall()
+        rows = conn.execute(text("SELECT * FROM train_models")).fetchall()
     train_models = [TrainModel.model_validate(r) for r in rows]
     return TrainData(model_names=[m.name for m in train_models])
 
@@ -848,10 +790,7 @@ class AddTrainResponse(BaseModel):
 @app.post("/api/admin/add_train")
 def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
     with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM train_models WHERE name = :name"),
-            {"name": req.model_name}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM train_models WHERE name = :name"), {"name": req.model_name}).fetchone()
     if row is None:
         raise HTTPException(status_code=HTTPStatus.BAD_REQUEST)
 
@@ -861,13 +800,10 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
                 INSERT INTO trains (name, model)
                 VALUES (:name, :model)
                 """),
-            {"name": req.train_name, "model": req.model_name}
+            {"name": req.train_name, "model": req.model_name},
         )
 
-        row = conn.execute(
-            text("SELECT * FROM trains WHERE name = :name"),
-            {"name": req.train_name}
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM trains WHERE name = :name"), {"name": req.train_name}).fetchone()
     train = Train.model_validate(row)
 
     with engine.begin() as conn:
@@ -908,13 +844,12 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
                     "departure_at_station_d_to_c": add_time(departure_time_at_a, 50),
                     "departure_at_station_c_to_b": add_time(departure_time_at_a, 60),
                     "departure_at_station_b_to_a": add_time(departure_time_at_a, 70),
-                }
+                },
             )
 
     with engine.begin() as conn:
         rows = conn.execute(
-            text("SELECT * FROM train_schedules WHERE train_id = :train_id"),
-            {"train_id": train.id}
+            text("SELECT * FROM train_schedules WHERE train_id = :train_id"), {"train_id": train.id}
         ).fetchall()
     schedules = [TrainSchedule.model_validate(r) for r in rows]
 
@@ -932,7 +867,16 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
             train_model = TrainModel.model_validate(row)
 
             for i in range(train_model.seat_rows):
-                stations_list = [["A", "B"], ["B", "C"], ["C", "D"], ["D", "E"], ["E", "D"], ["D", "C"], ["C", "B"], ["B", "A"]]
+                stations_list = [
+                    ["A", "B"],
+                    ["B", "C"],
+                    ["C", "D"],
+                    ["D", "E"],
+                    ["E", "D"],
+                    ["D", "C"],
+                    ["C", "B"],
+                    ["B", "A"],
+                ]
                 for stations in stations_list:
                     conn.execute(
                         text("""

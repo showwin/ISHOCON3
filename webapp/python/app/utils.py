@@ -17,16 +17,16 @@ if TYPE_CHECKING:
 
 BASE_TICKET_PRICE = 1000
 
+
 class AvailableSeats(Enum):
     LOTS = "lots"
     FEW = "few"
     NONE = "none"
 
+
 def get_application_clock() -> str:
     with engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT * FROM settings LIMIT 1")
-        ).fetchone()
+        row = conn.execute(text("SELECT * FROM settings LIMIT 1")).fetchone()
     setting = Setting.model_validate(row)
 
     time_passed = datetime.now() - setting.initialized_at
@@ -35,6 +35,7 @@ def get_application_clock() -> str:
     hours = min(time_passed.seconds // 6, 24)
     minutes = int((time_passed.seconds + (time_passed.microseconds / 1000000)) % 6 * 10) if hours < 24 else 0
     return f"{hours:02d}:{minutes:02d}"
+
 
 def get_available_seats_sign(available_seats: int, total_seats: int) -> str:
     if available_seats == 0:
@@ -50,10 +51,7 @@ def take_lock(schedule_id: str) -> bool:
     with engine.begin() as conn:
         while True:
             try:
-                conn.execute(
-                    text("INSERT INTO reservation_locks (schedule_id) VALUES (:id)"),
-                    {"id": schedule_id}
-                )
+                conn.execute(text("INSERT INTO reservation_locks (schedule_id) VALUES (:id)"), {"id": schedule_id})
             except IntegrityError:
                 if i >= retry:
                     print(f"Failed to take a lock {schedule_id} after {retry} retries")
@@ -64,12 +62,11 @@ def take_lock(schedule_id: str) -> bool:
                 break
     return True
 
+
 def release_lock(schedule_id: str) -> None:
     with engine.begin() as conn:
-        conn.execute(
-            text("DELETE FROM reservation_locks WHERE schedule_id = :id"),
-            {"id": schedule_id}
-        )
+        conn.execute(text("DELETE FROM reservation_locks WHERE schedule_id = :id"), {"id": schedule_id})
+
 
 def seat_index_to_position(index: int, seat_columns: int) -> str:
     """Convert seat index (1-based) to seat position (e.g., 1 -> 1-A, 2 -> 1-B)"""
@@ -78,6 +75,7 @@ def seat_index_to_position(index: int, seat_columns: int) -> str:
     col = (index - 1) % seat_columns
     return f"{row}-{seat_column_list[col]}"
 
+
 def seat_position_to_index(seat: str, seat_columns: int) -> int:
     """Convert seat position (e.g., 1-A) to seat index (1-based)"""
     seat_column_list = ["A", "B", "C", "D", "E"]
@@ -85,6 +83,7 @@ def seat_position_to_index(seat: str, seat_columns: int) -> int:
     row = int(row_str)
     col = seat_column_list.index(col_str)
     return (row - 1) * seat_columns + col + 1
+
 
 def initialize_schedule_seats(redis_client, schedule: TrainSchedule) -> None:
     """Initialize Redis list with all available seats for a schedule"""
@@ -97,7 +96,7 @@ def initialize_schedule_seats(redis_client, schedule: TrainSchedule) -> None:
                 INNER JOIN trains t ON t.model_name = tm.name
                 WHERE t.id = :train_id
                 """),
-            {"train_id": schedule.train_id}
+            {"train_id": schedule.train_id},
         ).fetchone()
 
     if row:
@@ -118,6 +117,7 @@ def initialize_schedule_seats(redis_client, schedule: TrainSchedule) -> None:
         redis_key = f"schedule:{schedule.id}:available_seats"
         redis_client.rpush(redis_key, *available_seats)
 
+
 class SeatRowStatus(BaseModel):
     seat_row: int
     a: int
@@ -126,7 +126,10 @@ class SeatRowStatus(BaseModel):
     d: int
     e: int
 
-def pick_seats(redis_client, schedule_id: str, from_station_id: str, to_station_id: str, num_people: int) -> tuple[str | None, list[str]]:
+
+def pick_seats(
+    redis_client, schedule_id: str, from_station_id: str, to_station_id: str, num_people: int
+) -> tuple[str | None, list[str]]:
     # Use Redis list to atomically pop available seats
     redis_key = f"schedule:{schedule_id}:available_seats"
 
@@ -139,7 +142,7 @@ def pick_seats(redis_client, schedule_id: str, from_station_id: str, to_station_
     elif not isinstance(results, list):
         results = [results]
 
-    reserved_seats = [seat.decode('utf-8') for seat in results]
+    reserved_seats = [seat.decode("utf-8") for seat in results]
 
     if len(reserved_seats) < num_people:
         # Not enough seats available, return what we popped back to the list
@@ -148,10 +151,7 @@ def pick_seats(redis_client, schedule_id: str, from_station_id: str, to_station_
 
         # Try to find next available schedule (recommendation)
         with engine.begin() as conn:
-            row = conn.execute(
-                text("SELECT * FROM train_schedules WHERE id = :id"),
-                {"id": schedule_id}
-            ).fetchone()
+            row = conn.execute(text("SELECT * FROM train_schedules WHERE id = :id"), {"id": schedule_id}).fetchone()
             schedule = TrainSchedule.model_validate(row)
 
             row = conn.execute(
@@ -162,7 +162,7 @@ def pick_seats(redis_client, schedule_id: str, from_station_id: str, to_station_
                     ORDER BY departure_at_station_a_to_b
                     LIMIT 1
                     """),
-                {"departure_at_station_a_to_b": schedule.departure_at_station_a_to_b}
+                {"departure_at_station_a_to_b": schedule.departure_at_station_a_to_b},
             ).fetchone()
 
             if row is None:
@@ -180,7 +180,7 @@ def pick_seats(redis_client, schedule_id: str, from_station_id: str, to_station_
                     SET {column.lower()}_is_available = 0
                     WHERE schedule_id = :schedule_id AND seat_row = :seat_row
                     """),
-                {"schedule_id": schedule_id, "seat_row": seat_row}
+                {"schedule_id": schedule_id, "seat_row": seat_row},
             )
 
     return schedule_id, reserved_seats
@@ -194,7 +194,7 @@ def get_stations_between(start: str, end: str) -> list[str]:
 
     start_index = stations.index(start)
     end_index = stations[start_index:].index(end) + start_index
-    return station_ids[start_index:end_index + 1]
+    return station_ids[start_index : end_index + 1]
 
 
 def calculate_distance(start, end):
@@ -223,7 +223,7 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
                  INNER JOIN reservations r ON r.schedule_id = ts.id
                  WHERE r.id = :reservation_id
                  """),
-            {"reservation_id": reservation.id}
+            {"reservation_id": reservation.id},
         ).fetchone()
         train_seat_columns = row[0]
 
@@ -271,7 +271,7 @@ def get_departure_at(schedule_id: str, from_station_id: str, to_station_id: str)
             text("""
                 SELECT * FROM train_schedules WHERE id = :id
                 """),
-            {"id": schedule_id}
+            {"id": schedule_id},
         ).fetchone()
     schedule = TrainSchedule.model_validate(row)
     return getattr(schedule, f"departure_at_station_{from_station_id.lower()}_to_{next_station.lower()}")
@@ -284,10 +284,9 @@ def release_seat_reservation(redis_client, reservation: Reservation) -> None:
             text("""
                 SELECT seat FROM reservation_seats WHERE reservation_id = :reservation_id
                 """),
-            {"reservation_id": reservation.id}
+            {"reservation_id": reservation.id},
         ).fetchall()
         seats = [row[0] for row in rows]
-
 
     if not seats:
         return
@@ -308,7 +307,7 @@ def generate_qr_image(entry_token: str) -> str:
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     byte_io = BytesIO()
-    img.save(byte_io, format='PNG')
+    img.save(byte_io, format="PNG")
     return byte_io.getvalue()
 
 
@@ -327,5 +326,5 @@ def update_last_activity_at(user_id) -> None:
             SET last_activity_at = :current_time
             WHERE id = :user_id
             """),
-            {"user_id": user_id, "current_time": datetime.now()}
+            {"user_id": user_id, "current_time": datetime.now()},
         )

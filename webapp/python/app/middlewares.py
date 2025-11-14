@@ -10,9 +10,7 @@ from .sql import engine
 
 def app_auth_middleware(user_name: Annotated[str | None, Cookie()] = None) -> User:
     if not user_name:
-        raise HTTPException(
-            status_code=HTTPStatus.UNAUTHORIZED, detail="user_name cookie is required"
-        )
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="user_name cookie is required")
 
     with engine.begin() as conn:
         row = conn.execute(
@@ -21,9 +19,7 @@ def app_auth_middleware(user_name: Annotated[str | None, Cookie()] = None) -> Us
         ).fetchone()
 
         if row is None:
-            raise HTTPException(
-                status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid user name"
-            )
+            raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid user name")
         user = User.model_validate(row)
 
         return user
@@ -45,9 +41,6 @@ def admin_auth_middleware(
         ).fetchone()
 
         if row is None:
-            raise HTTPException(
-                status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid admin name"
-            )
+            raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid admin name")
 
         return User.model_validate(row)
-

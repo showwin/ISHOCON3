@@ -65,11 +65,13 @@ class SeatRowReservation(BaseModel):
     d_is_available: bool
     e_is_available: bool
 
+
 class ReservationSeat(BaseModel):
     id: int
     reservation_id: str
     seat: str
     created_at: datetime
+
 
 class Reservation(BaseModel):
     id: str
@@ -81,10 +83,12 @@ class Reservation(BaseModel):
     entry_token: str
     created_at: datetime
 
+
 class ReservationQrImage(BaseModel):
     id: str
     reservation_id: str
     image: bytes
+
 
 class Payment(BaseModel):
     id: int

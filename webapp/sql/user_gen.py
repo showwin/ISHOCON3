@@ -36,12 +36,12 @@ engine = sqlalchemy.create_engine(
 # Configuration
 TOTAL_USER_COUNT = 50000
 BATCH_SIZE = 1000
-CSV_OUTPUT = 'users.csv'
-PROGRESS_FILE = 'user_gen_progress.json'
+CSV_OUTPUT = "users.csv"
+PROGRESS_FILE = "user_gen_progress.json"
 
 # Credit amount distribution parameters (log-normal)
-MU = 9.8        # Log-transformed mean
-SIGMA = 0.915   # Log-transformed standard deviation
+MU = 9.8  # Log-transformed mean
+SIGMA = 0.915  # Log-transformed standard deviation
 MIN_CREDIT = 5000
 MAX_CREDIT = 300000
 
@@ -58,20 +58,20 @@ def generate_credit_amount(mu, sigma, min_val, max_val):
 def load_progress():
     """Load progress from progress file"""
     if os.path.exists(PROGRESS_FILE):
-        with open(PROGRESS_FILE, 'r') as f:
+        with open(PROGRESS_FILE, "r") as f:
             return json.load(f)
     return {
-        'last_completed_batch': -1,  # -1 means no batches completed
-        'total_users_created': 0,
-        'started_at': None,
-        'last_updated': None
+        "last_completed_batch": -1,  # -1 means no batches completed
+        "total_users_created": 0,
+        "started_at": None,
+        "last_updated": None,
     }
 
 
 def save_progress(progress):
     """Save progress to progress file"""
-    progress['last_updated'] = datetime.now().isoformat()
-    with open(PROGRESS_FILE, 'w') as f:
+    progress["last_updated"] = datetime.now().isoformat()
+    with open(PROGRESS_FILE, "w") as f:
         json.dump(progress, f, indent=2)
 
 
@@ -89,7 +89,7 @@ def verify_csv_state():
     if not os.path.exists(CSV_OUTPUT):
         return 0
 
-    with open(CSV_OUTPUT, 'r') as f:
+    with open(CSV_OUTPUT, "r") as f:
         # Subtract 1 for header row
         return sum(1 for _ in f) - 1
 
@@ -109,19 +109,23 @@ def create_users_batch(start_index, end_index, csv_file):
         hashed_password = bcrypt.hashpw(password.encode(), encoded_salt).decode()
         credit_amount = generate_credit_amount(MU, SIGMA, MIN_CREDIT, MAX_CREDIT)
 
-        users_data.append({
-            'id': user_id,
-            'name': name,
-            'password': password,
-            'hashed_password': hashed_password,
-            'salt': salt,
-            'global_payment_token': global_payment_token,
-            'credit_amount': credit_amount
-        })
+        users_data.append(
+            {
+                "id": user_id,
+                "name": name,
+                "password": password,
+                "hashed_password": hashed_password,
+                "salt": salt,
+                "global_payment_token": global_payment_token,
+                "credit_amount": credit_amount,
+            }
+        )
 
     # Write to CSV
     for user in users_data:
-        csv_file.write(f"{user['name']},{user['password']},{user['global_payment_token']},{user['credit_amount']}\n")
+        csv_file.write(
+            f"{user['name']},{user['password']},{user['global_payment_token']},{user['credit_amount']}\n"
+        )
     csv_file.flush()
 
     # Insert into database
@@ -133,12 +137,12 @@ def create_users_batch(start_index, end_index, csv_file):
                     VALUES (:id, :name, :hashed_password, :salt, 0, :global_payment_token)
                 """),
                 {
-                    'id': user['id'],
-                    'name': user['name'],
-                    'hashed_password': user['hashed_password'],
-                    'salt': user['salt'],
-                    'global_payment_token': user['global_payment_token']
-                }
+                    "id": user["id"],
+                    "name": user["name"],
+                    "hashed_password": user["hashed_password"],
+                    "salt": user["salt"],
+                    "global_payment_token": user["global_payment_token"],
+                },
             )
 
     return len(users_data)
@@ -152,9 +156,11 @@ def print_progress(batch_num, total_batches, users_created, total_users, elapsed
     eta_seconds = avg_time_per_batch * remaining_batches
     eta_minutes = eta_seconds / 60
 
-    print(f"Batch {batch_num + 1}/{total_batches} completed | "
-          f"Users: {users_created}/{total_users} ({pct:.1f}%) | "
-          f"ETA: {eta_minutes:.1f}m")
+    print(
+        f"Batch {batch_num + 1}/{total_batches} completed | "
+        f"Users: {users_created}/{total_users} ({pct:.1f}%) | "
+        f"ETA: {eta_minutes:.1f}m"
+    )
 
 
 def main():
@@ -178,7 +184,7 @@ def main():
     print()
 
     # Determine starting point
-    start_batch = progress['last_completed_batch'] + 1
+    start_batch = progress["last_completed_batch"] + 1
     start_user_index = start_batch * BATCH_SIZE
 
     if start_user_index >= TOTAL_USER_COUNT:
@@ -191,50 +197,59 @@ def main():
 
         # Verify CSV consistency
         if csv_user_count != start_user_index:
-            print(f"WARNING: CSV has {csv_user_count} users but expected {start_user_index}")
+            print(
+                f"WARNING: CSV has {csv_user_count} users but expected {start_user_index}"
+            )
             response = input("Do you want to continue anyway? (yes/no): ")
-            if response.lower() != 'yes':
+            if response.lower() != "yes":
                 print("Aborted.")
                 return
 
     # Initialize progress tracking
-    if progress['started_at'] is None:
-        progress['started_at'] = datetime.now().isoformat()
+    if progress["started_at"] is None:
+        progress["started_at"] = datetime.now().isoformat()
 
     start_time = time.time()
     total_batches = (TOTAL_USER_COUNT + BATCH_SIZE - 1) // BATCH_SIZE
 
     # Open CSV file in append mode if resuming, otherwise create new
-    csv_mode = 'a' if start_batch > 0 else 'w'
+    csv_mode = "a" if start_batch > 0 else "w"
 
     try:
         with open(CSV_OUTPUT, csv_mode) as csv_file:
             # Write header if starting fresh
             if start_batch == 0:
-                csv_file.write('name,password,global_payment_token,credit_amount\n')
+                csv_file.write("name,password,global_payment_token,credit_amount\n")
 
             # Process batches
             for batch_num in range(start_batch, total_batches):
                 batch_start_index = batch_num * BATCH_SIZE
                 batch_end_index = min((batch_num + 1) * BATCH_SIZE, TOTAL_USER_COUNT)
 
-                print(f"Processing batch {batch_num + 1}/{total_batches} "
-                      f"(users {batch_start_index + 1}-{batch_end_index})...", end=' ')
+                print(
+                    f"Processing batch {batch_num + 1}/{total_batches} "
+                    f"(users {batch_start_index + 1}-{batch_end_index})...",
+                    end=" ",
+                )
 
                 batch_start_time = time.time()
-                users_created = create_users_batch(batch_start_index, batch_end_index, csv_file)
+                users_created = create_users_batch(
+                    batch_start_index, batch_end_index, csv_file
+                )
                 batch_elapsed = time.time() - batch_start_time
 
                 print(f"✓ ({batch_elapsed:.1f}s)")
 
                 # Update progress
-                progress['last_completed_batch'] = batch_num
-                progress['total_users_created'] = batch_end_index
+                progress["last_completed_batch"] = batch_num
+                progress["total_users_created"] = batch_end_index
                 save_progress(progress)
 
                 # Print overall progress
                 elapsed = time.time() - start_time
-                print_progress(batch_num, total_batches, batch_end_index, TOTAL_USER_COUNT, elapsed)
+                print_progress(
+                    batch_num, total_batches, batch_end_index, TOTAL_USER_COUNT, elapsed
+                )
                 print()
 
         print("=" * 70)
@@ -252,16 +267,20 @@ def main():
     except KeyboardInterrupt:
         print("\n\n" + "=" * 70)
         print("⚠ Interrupted by user")
-        print(f"Progress saved. {progress['total_users_created']} users created so far.")
+        print(
+            f"Progress saved. {progress['total_users_created']} users created so far."
+        )
         print(f"To resume, run this script again.")
         print("=" * 70)
         sys.exit(1)
     except Exception as e:
         print(f"\n\nERROR: {e}")
-        print(f"Progress saved. {progress['total_users_created']} users created so far.")
+        print(
+            f"Progress saved. {progress['total_users_created']} users created so far."
+        )
         print(f"To resume, run this script again.")
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
