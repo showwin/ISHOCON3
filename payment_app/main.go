@@ -7,8 +7,8 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -27,20 +27,14 @@ var (
 	mu        sync.RWMutex                 // protects userStore
 )
 
-// loadCSV reads the CSV file and populates userStore
-func loadCSV(filename string) error {
-	file, err := os.Open(filename)
-	if err != nil {
-		return fmt.Errorf("unable to open CSV file: %w", err)
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
+// loadCSV reads the embedded CSV data and populates userStore
+func loadCSV() error {
+	reader := csv.NewReader(strings.NewReader(UsersCSV))
 	reader.Read() // skip header
 
 	records, err := reader.ReadAll()
 	if err != nil {
-		return fmt.Errorf("unable to read CSV file: %w", err)
+		return fmt.Errorf("unable to read CSV data: %w", err)
 	}
 
 	// We acquire a write lock to safely modify the map
@@ -141,7 +135,7 @@ func handleInitialize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := loadCSV("users.csv"); err != nil {
+	if err := loadCSV(); err != nil {
 		http.Error(w, "failed to load CSV", http.StatusInternalServerError)
 		return
 	}
@@ -153,8 +147,8 @@ func handleInitialize(w http.ResponseWriter, r *http.Request) {
 func main() {
 	rand.New(rand.NewSource(time.Now().UnixNano())) // Seed random number generator
 
-	// Load CSV on startup
-	if err := loadCSV("users.csv"); err != nil {
+	// Load embedded CSV on startup
+	if err := loadCSV(); err != nil {
 		log.Fatalf("Failed to load CSV: %v", err)
 	}
 
@@ -165,6 +159,6 @@ func main() {
 		fmt.Fprintf(w, "OK\n")
 	})
 
-	fmt.Println("Server running on http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	fmt.Println("Server running on http://localhost:8081")
+	log.Fatal(http.ListenAndServe(":8081", nil))
 }

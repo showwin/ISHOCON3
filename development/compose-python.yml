@@ -26,6 +26,7 @@ services:
       #   condition: service_healthy
     environment:
       ISHOCON_DB_HOST: db
+      ISHOCON_DB_OPTIONS: "--ssl-verify-server-cert=FALSE"
       ISHOCON_PAYMENT_HOST: payment_app
       ISHOCON_PAYMENT_PORT: 8080
     extra_hosts:
@@ -36,9 +37,9 @@ services:
       dockerfile: ../development/payment_app/Dockerfile
     image: payment-app
     ports:
-      - "8081:8080"
+      - "8081:8081"
     healthcheck:
-      test: "curl -f http://localhost:8080/healthz || exit 1"
+      test: "curl -f http://localhost:8081/healthz || exit 1"
       start_period: 5s
   db:
     image: public.ecr.aws/docker/library/mysql:8

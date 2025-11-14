@@ -27,6 +27,6 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.Flags().StringVar(&targetURL, "target", "http://localhost:8080", "target URL for benchmark")
+	rootCmd.Flags().StringVar(&targetURL, "target", "http://127.0.0.1:8080", "target URL for benchmark")
 	rootCmd.Flags().StringVar(&logLevel, "log-level", "info", "log level (debug, info, warn, error)")
 }

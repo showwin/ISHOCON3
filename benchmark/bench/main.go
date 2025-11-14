@@ -59,7 +59,7 @@ type InitializeResponse struct {
 func Run(targetURL string, logLevel string) {
 	rand.New(rand.NewSource(time.Now().UnixNano())) // Seed random number generator
 
-	agent, err := agent.NewAgent(agent.WithBaseURL(targetURL), agent.WithDefaultTransport())
+	agent, err := agent.NewAgent(agent.WithBaseURL(targetURL), agent.WithTimeout(5*time.Second), agent.WithDefaultTransport())
 	if err != nil {
 		slog.Error("failed to create agent", "error", err.Error())
 	}

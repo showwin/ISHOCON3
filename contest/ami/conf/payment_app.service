@@ -1,0 +1,17 @@
+[Unit]
+Description=ISHOCON3 Payment App
+After=network.target
+
+[Service]
+Type=simple
+User=ishocon
+Group=ishocon
+WorkingDirectory=/home/ishocon
+ExecStart=/home/ishocon/payment_app
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
