@@ -238,7 +238,14 @@
       }
     };
 
-    let currentLang = 'ja';
+    // Get language from query string, default to 'ja'
+    function getLanguageFromURL() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const lang = urlParams.get('lang');
+      return (lang === 'en' || lang === 'ja') ? lang : 'ja';
+    }
+
+    let currentLang = getLanguageFromURL();
 
     function t(key) {
       const keys = key.split('.');
@@ -247,6 +254,12 @@
         value = value?.[k];
       }
       return value || key;
+    }
+
+    function setLanguageInURL(lang) {
+      const url = new URL(window.location);
+      url.searchParams.set('lang', lang);
+      window.history.replaceState({}, '', url);
     }
 
     function updateUILanguage() {
@@ -762,6 +775,7 @@
       const languageToggle = document.getElementById('language-toggle');
       languageToggle?.addEventListener('click', () => {
         currentLang = currentLang === 'ja' ? 'en' : 'ja';
+        setLanguageInURL(currentLang);
         updateUILanguage();
       });
     });
