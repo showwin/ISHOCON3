@@ -28,7 +28,7 @@ services:
       ISHOCON_DB_HOST: db
       ISHOCON_DB_OPTIONS: "--ssl-verify-server-cert=FALSE"
       ISHOCON_PAYMENT_HOST: payment_app
-      ISHOCON_PAYMENT_PORT: 8080
+      ISHOCON_PAYMENT_PORT: 8081
     extra_hosts:
       - "host.docker.internal:host-gateway"
   payment_app:

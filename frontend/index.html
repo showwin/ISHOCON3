@@ -23,6 +23,7 @@
         <span id="initialize-button-container" class="me-3"></span>
         <span class="text-white me-3">Taro</span>
         <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
+        <button id="language-toggle" class="btn btn-outline-light btn-sm">EN</button>
       </div>
     </div>
   </nav>
@@ -43,11 +44,11 @@
           <label for="to-station-select" class="form-label">降車駅</label>
           <select id="to-station-select" class="form-select"></select>
         </div>
-        <div class="col-md-2">
+        <div class="col-md-1">
           <label for="num-people" class="form-label">人数</label>
           <input type="number" id="num-people" class="form-control" min="1" value="1"/>
         </div>
-        <div class="col-md-1 d-flex align-items-end">
+        <div class="col-md-2 d-flex align-items-end">
           <button type="button" id="reserve-button" class="btn btn-primary w-100">予約</button>
         </div>
       </form>
@@ -145,13 +146,166 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    const messages = {
-      success: "以下の座席を確保しました:",
-      recommend: "指定の条件では席が確保できませんでした。代わりにこちらはいかがですか？",
-      fail: {
-        NO_SEAT_AVAILABLE: "指定の条件に当てはまるチケットはご用意できませんでした"
+    // i18n translations
+    const translations = {
+      ja: {
+        pageTitle: "新幹線チケット予約",
+        logout: "ログアウト",
+        reservationForm: "予約フォーム",
+        trainName: "列車名",
+        boardingStation: "乗車駅",
+        alightingStation: "降車駅",
+        numPeople: "人数",
+        reserve: "予約",
+        ticketList: "チケット販売中の列車一覧",
+        outbound: "往路",
+        return: "復路",
+        purchasedTickets: "購入済チケット一覧",
+        departureTime: "出発時間",
+        amount: "金額",
+        entered: "入場済み",
+        refund: "返金",
+        entry: "入場",
+        reservationResult: "予約結果",
+        close: "閉じる",
+        cancel: "キャンセル",
+        purchase: "購入",
+        ok: "OK",
+        entryConfirmation: "入場確認",
+        enterGate: "入場する",
+        initialize: "初期化",
+        messages: {
+          success: "以下の座席を確保しました:",
+          recommend: "指定の条件では席が確保できませんでした。代わりにこちらはいかがですか？",
+          fail: {
+            NO_SEAT_AVAILABLE: "指定の条件に当てはまるチケットはご用意できませんでした"
+          },
+          discounted: "(離れた席のため半額)",
+          scheduleInfo: "列車名:",
+          section: "区間:",
+          seats: "座席:",
+          totalPrice: "合計金額:",
+          yen: "円",
+          refundConfirm: "このチケットを返金しますか？",
+          trainDeparted: "列車の出発時間をすでに過ぎております。返金しますか？",
+          sameStationError: "乗車駅と降車駅が同じです。異なる駅を選択してください。",
+          noTrainSelectedError: "列車を選択してください。"
+        }
+      },
+      en: {
+        pageTitle: "Bullet Train Ticket Reservation",
+        logout: "Logout",
+        reservationForm: "Reservation Form",
+        trainName: "Train",
+        boardingStation: "From",
+        alightingStation: "To",
+        numPeople: "People",
+        reserve: "Reserve",
+        ticketList: "Available Trains",
+        outbound: "Outbound",
+        return: "Return",
+        purchasedTickets: "Purchased Tickets",
+        departureTime: "Departure",
+        amount: "Amount",
+        entered: "Entered",
+        refund: "Refund",
+        entry: "Entry",
+        reservationResult: "Reservation Result",
+        close: "Close",
+        cancel: "Cancel",
+        purchase: "Purchase",
+        ok: "OK",
+        entryConfirmation: "Entry Confirmation",
+        enterGate: "Enter",
+        initialize: "Initialize",
+        messages: {
+          success: "The following seats have been reserved:",
+          recommend: "Seats with the specified conditions could not be secured. How about this alternative?",
+          fail: {
+            NO_SEAT_AVAILABLE: "No tickets are available for the specified conditions"
+          },
+          discounted: "(50% off for separated seats)",
+          scheduleInfo: "Train:",
+          section: "Section:",
+          seats: "Seats:",
+          totalPrice: "Total:",
+          yen: "JPY",
+          refundConfirm: "Do you want to refund this ticket?",
+          trainDeparted: "The train has already departed. Do you want a refund?",
+          sameStationError: "Boarding and alighting stations are the same. Please select different stations.",
+          noTrainSelectedError: "Please select a train."
+        }
       }
     };
+
+    let currentLang = 'ja';
+
+    function t(key) {
+      const keys = key.split('.');
+      let value = translations[currentLang];
+      for (const k of keys) {
+        value = value?.[k];
+      }
+      return value || key;
+    }
+
+    function updateUILanguage() {
+      // Update page title
+      document.title = t('pageTitle') + " - Ishokansen Reservation";
+
+      // Update header subtitle
+      document.querySelector('.navbar-brand .text-white-50').textContent = t('pageTitle');
+
+      // Update logout button
+      document.getElementById('logout-button').textContent = t('logout');
+
+      // Update language toggle button
+      document.getElementById('language-toggle').textContent = currentLang === 'ja' ? 'EN' : 'JP';
+
+      // Update reservation form section
+      document.querySelector('#reservation-section h2').textContent = t('reservationForm');
+      document.querySelector('label[for="schedule-select"]').textContent = t('trainName');
+      document.querySelector('label[for="from-station-select"]').textContent = t('boardingStation');
+      document.querySelector('label[for="to-station-select"]').textContent = t('alightingStation');
+      document.querySelector('label[for="num-people"]').textContent = t('numPeople');
+      document.getElementById('reserve-button').textContent = t('reserve');
+
+      // Update schedule list section
+      document.querySelector('#schedule-list-section h2').textContent = t('ticketList');
+      const headers = document.querySelectorAll('#schedule-list-table thead tr');
+      if (headers[0]) {
+        const thList = headers[0].querySelectorAll('th');
+        if (thList[0]) thList[0].textContent = t('trainName');
+        if (thList[1]) thList[1].textContent = t('outbound');
+        if (thList[2]) thList[2].textContent = t('return');
+      }
+
+      // Update purchased tickets section
+      document.querySelector('#purchased-tickets-section h2').textContent = t('purchasedTickets');
+      const purchasedHeaders = document.querySelectorAll('#purchased-tickets-table thead th');
+      if (purchasedHeaders[0]) purchasedHeaders[0].textContent = t('trainName');
+      if (purchasedHeaders[1]) purchasedHeaders[1].textContent = t('boardingStation');
+      if (purchasedHeaders[2]) purchasedHeaders[2].textContent = t('alightingStation');
+      if (purchasedHeaders[3]) purchasedHeaders[3].textContent = t('departureTime');
+      if (purchasedHeaders[4]) purchasedHeaders[4].textContent = t('numPeople');
+      if (purchasedHeaders[5]) purchasedHeaders[5].textContent = t('amount');
+      if (purchasedHeaders[6]) purchasedHeaders[6].textContent = t('entered');
+      if (purchasedHeaders[7]) purchasedHeaders[7].textContent = t('refund');
+      if (purchasedHeaders[8]) purchasedHeaders[8].textContent = t('entry');
+
+      // Update modal titles
+      document.getElementById('reservationModalLabel').textContent = t('reservationResult');
+      document.getElementById('entranceModalLabel').textContent = t('entryConfirmation');
+
+      // Re-render purchased tickets to update button text
+      renderPurchasedTickets();
+
+      // Update initialize button if it exists
+      const initBtn = document.querySelector('#initialize-button-container button');
+      if (initBtn) {
+        initBtn.textContent = t('initialize');
+      }
+    }
 
     async function fetchSchedules() {
       const res = await fetch('/api/schedules');
@@ -232,13 +386,14 @@
 
       renderSchedules(schedules);
       renderScheduleOptions(schedules);
-      renderStationOptions(stations, fromStationSelect);
-      renderStationOptions(stations, toStationSelect);
+      renderStationOptions(stations, fromStationSelect, 0);
+      renderStationOptions(stations, toStationSelect, 1);
 
       renderPurchasedTickets();
 
       updateCurrentTimeDisplay();
       startClockSimulation();
+      updateUILanguage();
 
       // 定期的に列車(スケジュール)一覧を更新
       var updatedSchedules
@@ -289,12 +444,15 @@
       });
     }
 
-    function renderStationOptions(stationData, selectEl) {
+    function renderStationOptions(stationData, selectEl, defaultIndex = 0) {
       selectEl.innerHTML = '';
-      stationData.forEach(s => {
+      stationData.forEach((s, index) => {
         const option = document.createElement('option');
         option.value = s.id;
         option.textContent = s.name;
+        if (index === defaultIndex) {
+          option.selected = true;
+        }
         selectEl.appendChild(option);
       });
     }
@@ -304,6 +462,18 @@
       const fromStationId = fromStationSelect.value;
       const toStationId = toStationSelect.value;
       const numPeople = parseInt(numPeopleInput.value, 10);
+
+      // Validate that a train is selected
+      if (!selectedScheduleId || selectedScheduleId.trim() === '') {
+        showErrorModal(t('messages.noTrainSelectedError'));
+        return;
+      }
+
+      // Validate that from and to stations are different
+      if (fromStationId === toStationId) {
+        showErrorModal(t('messages.sameStationError'));
+        return;
+      }
 
       const res = await fetch('/api/reserve', {
         method: 'POST',
@@ -319,6 +489,23 @@
       handleReservationResponse(res);
     });
 
+    function showErrorModal(errorMessage) {
+      const modalBody = document.getElementById('reservation-modal-body');
+      const modalFooter = document.getElementById('reservation-modal-footer');
+      modalBody.innerHTML = '';
+      modalFooter.innerHTML = '';
+
+      modalBody.innerHTML = `<p class="text-danger">${errorMessage}</p>`;
+
+      const okBtn = document.createElement('button');
+      okBtn.className = 'btn btn-primary';
+      okBtn.textContent = t('ok');
+      okBtn.setAttribute('data-bs-dismiss','modal');
+      modalFooter.appendChild(okBtn);
+
+      reservationModal.show();
+    }
+
     function handleReservationResponse(res) {
       const modalBody = document.getElementById('reservation-modal-body');
       const modalFooter = document.getElementById('reservation-modal-footer');
@@ -327,25 +514,25 @@
 
       if (res.status === 'success' || res.status === 'recommend') {
         const info = res.status === 'success' ? res.reserved : res.recommend;
-        const discountMessage = info.is_discounted ? `(離れた席のため半額)` : '';
+        const discountMessage = info.is_discounted ? t('messages.discounted') : '';
 
         modalBody.innerHTML = `
-          <p>${res.status === 'success' ? messages.success : messages.recommend}</p>
-          <p>列車名: ${info.schedule_id}</p>
-          <p>区間: ${info.from_station} -> ${info.to_station}</p>
-          <p>出発時間: ${info.departure_at}</p>
-          <p>座席: ${info.seats.join(', ')}</p>
-          <p>合計金額: ${info.total_price}円 ${discountMessage}</p>
+          <p>${res.status === 'success' ? t('messages.success') : t('messages.recommend')}</p>
+          <p>${t('messages.scheduleInfo')} ${info.schedule_id}</p>
+          <p>${t('messages.section')} ${info.from_station} -> ${info.to_station}</p>
+          <p>${t('departureTime')}: ${info.departure_at}</p>
+          <p>${t('messages.seats')} ${info.seats.join(', ')}</p>
+          <p>${t('messages.totalPrice')} ${info.total_price}${t('messages.yen')} ${discountMessage}</p>
           <div id="purchase-error-msg" class="text-danger mt-2"></div>
         `;
         const cancelBtn = document.createElement('button');
         cancelBtn.className = 'btn btn-secondary';
-        cancelBtn.textContent = 'キャンセル';
+        cancelBtn.textContent = t('cancel');
         cancelBtn.setAttribute('data-bs-dismiss','modal');
 
         const purchaseBtn = document.createElement('button');
         purchaseBtn.className = 'btn btn-primary';
-        purchaseBtn.textContent = '購入';
+        purchaseBtn.textContent = t('purchase');
         purchaseBtn.addEventListener('click', async () => {
           purchaseBtn.disabled = true;
           await purchaseTicketAPI(info);
@@ -356,11 +543,11 @@
       } else {
         // fail
         const ec = res.error_code || 'UNKNOWN';
-        const msg = messages.fail[ec] || 'エラーが発生しました';
+        const msg = t('messages.fail.' + ec) || t('messages.fail.NO_SEAT_AVAILABLE');
         modalBody.innerHTML = `<p>${msg}</p>`;
         const okBtn = document.createElement('button');
         okBtn.className = 'btn btn-primary';
-        okBtn.textContent = 'OK';
+        okBtn.textContent = t('ok');
         okBtn.setAttribute('data-bs-dismiss','modal');
         modalFooter.appendChild(okBtn);
       }
@@ -423,10 +610,10 @@
         const tdRefund = document.createElement('td');
         const refundBtn = document.createElement('button');
         refundBtn.className = 'btn btn-danger btn-sm';
-        refundBtn.textContent = '返金';
+        refundBtn.textContent = t('refund');
         refundBtn.disabled = ticket.is_entered;
         refundBtn.addEventListener('click', () => {
-          showRefundModal(ticket, index, "このチケットを返金しますか？");
+          showRefundModal(ticket, index, t('messages.refundConfirm'));
         });
         tdRefund.appendChild(refundBtn);
         tr.appendChild(tdRefund);
@@ -434,7 +621,7 @@
         const tdEntrance = document.createElement('td');
         const entranceBtn = document.createElement('button');
         entranceBtn.className = 'btn btn-success btn-sm';
-        entranceBtn.textContent = '入場';
+        entranceBtn.textContent = t('entry');
         entranceBtn.disabled = ticket.is_entered;
         entranceBtn.addEventListener('click', () => {
           showEntryModal(ticket, index);
@@ -468,12 +655,12 @@
 
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'btn btn-secondary';
-      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.textContent = t('cancel');
       cancelBtn.setAttribute('data-bs-dismiss','modal');
 
       const enterBtn = document.createElement('button');
       enterBtn.className = 'btn btn-primary';
-      enterBtn.textContent = '入場する';
+      enterBtn.textContent = t('enterGate');
       enterBtn.addEventListener('click', async () => {
         const enterRes = await fetch('/api/entry', {
           method: 'POST',
@@ -490,11 +677,11 @@
           // 続けてモーダルを表示できるように前のモーダルが消えたのを確認してから表示
           const handler = () => {
             entranceModal._element.removeEventListener('hidden.bs.modal', handler);
-            showRefundModal(ticket, ticketIndex, "列車の出発時間をすでに過ぎております。返金しますか？");
+            showRefundModal(ticket, ticketIndex, t('messages.trainDeparted'));
           };
           entranceModal._element.addEventListener('hidden.bs.modal', handler);
         } else {
-          errorMsg.textContent = '入場に失敗しました。後ほどお試しください。';
+          errorMsg.textContent = t('messages.fail.NO_SEAT_AVAILABLE');
         }
       });
 
@@ -515,12 +702,12 @@
 
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'btn btn-secondary';
-      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.textContent = t('cancel');
       cancelBtn.setAttribute('data-bs-dismiss','modal');
 
       const refundBtn = document.createElement('button');
       refundBtn.className = 'btn btn-primary';
-      refundBtn.textContent = '返金';
+      refundBtn.textContent = t('refund');
       refundBtn.addEventListener('click', async () => {
         const res = await fetch('/api/refund', {
           method: 'POST',
@@ -548,7 +735,7 @@
       initializeButtonContainer.innerHTML = '';
       const btn = document.createElement('button');
       btn.className = 'btn btn-warning btn-sm';
-      btn.textContent = '初期化';
+      btn.textContent = t('initialize');
       btn.addEventListener('click', async () => {
         await fetch('/api/initialize', {method: 'POST'});
         location.reload();
@@ -569,6 +756,13 @@
           console.error('ログアウトに失敗しました');
           // 必要であればエラー表示など
         }
+      });
+
+      // Language toggle event listener
+      const languageToggle = document.getElementById('language-toggle');
+      languageToggle?.addEventListener('click', () => {
+        currentLang = currentLang === 'ja' ? 'en' : 'ja';
+        updateUILanguage();
       });
     });
 
