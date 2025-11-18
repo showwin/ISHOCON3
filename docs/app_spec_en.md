@@ -8,7 +8,7 @@ Your evaluation is determined by the sales amount during the 10-hour period from
 
 ## Route Configuration
 
-Currently, there are 5 stations in operation from Station A to Station E. Trains always stop in the order A->B->C->D->E->D->C->B->A. There are no plans to add more stations.
+Currently, there are 5 stations in operation from Station A to Station E. The stations are named Arena, Bridge, Cave, Dock, and Edge. For simplicity, they will be abbreviated by their first letters. Trains always stop in the order A->B->C->D->E->D->C->B->A. There are no plans to add more stations.
 
 The railway company currently owns 10 trains, and each train has multiple operating schedules throughout the day.
 For example, the following schedule is possible:

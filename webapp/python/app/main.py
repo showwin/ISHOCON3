@@ -1,7 +1,6 @@
 import bcrypt
 import subprocess
 from typing import Annotated
-import random
 from datetime import datetime, timedelta, timezone
 from http import HTTPStatus
 
@@ -31,7 +30,6 @@ SESSION_CONFIG = {
 class PostInitializeResponse(BaseModel):
     initialized_at: datetime
     app_language: str
-    ui_language: str
 
 
 @app.post("/api/initialize")
@@ -61,7 +59,6 @@ def post_initialize() -> PostInitializeResponse:
     return PostInitializeResponse(
         initialized_at=setting.initialized_at.astimezone(timezone.utc),
         app_language="python",
-        ui_language="ja"
     )
 
 
@@ -105,9 +102,11 @@ def get_schedules() -> ScheduleResponse:
     current_time = get_application_clock()
     current_hour, current_minute = current_time.split(":")
 
-    # 入場までのタイムラグを考慮して、2時間後以降のスケジュールを取得している。
-    # 本当はもっと直近の予定を返して、できるだけ早い時間帯に乗車してもらいたい
-    three_hours_later = f"{(int(current_hour) + 2):02d}:{current_minute}"
+    # JA: アプリケーションが遅いので予約から入場までのタイムラグを考慮して、2時間後以降のスケジュールを返却している。
+    # 本当はもっと直近のスケジュールを返して、できるだけ早い時間帯に乗車してもらいたい
+    # EN: The application is slow, so we are returning schedules from 2 hours later, taking into account the time lag from reservation to entry.
+    # We really want to return earlier schedules and have users board as soon as possible.
+    two_hours_later = f"{(int(current_hour) + 2):02d}:{current_minute}"
 
     with engine.begin() as conn:
         rows = conn.execute(
@@ -118,7 +117,7 @@ def get_schedules() -> ScheduleResponse:
             ORDER BY departure_at_station_a_to_b
             LIMIT 10
             """),
-            {"time": three_hours_later}
+            {"time": two_hours_later}
         ).fetchall()
     schedules = [TrainSchedule.model_validate(r) for r in rows]
 
@@ -132,14 +131,14 @@ def get_schedules() -> ScheduleResponse:
         train = Train.model_validate(row)
 
         available_seats_between_stations = {
-            "A->B": 0,
-            "B->C": 0,
-            "C->D": 0,
-            "D->E": 0,
-            "E->D": 0,
-            "D->C": 0,
-            "C->B": 0,
-            "B->A": 0,
+            "A->B": "",
+            "B->C": "",
+            "C->D": "",
+            "D->E": "",
+            "E->D": "",
+            "D->C": "",
+            "C->B": "",
+            "B->A": "",
         }
         for stations in available_seats_between_stations.keys():
             with engine.begin() as conn:
@@ -157,11 +156,11 @@ def get_schedules() -> ScheduleResponse:
 
                 row = conn.execute(
                     text("""
-                        SELECT seat_rows * seat_columns AS total_seats
+                        SELECT train_models.seat_rows * train_models.seat_columns AS total_seats
                         FROM trains
                         INNER JOIN train_models
                         ON trains.model_name = train_models.name
-                        WHERE id = :train_id;
+                        WHERE trains.id = :train_id;
                     """),
                     {"train_id": train.id},
                 ).fetchone()
@@ -192,7 +191,7 @@ def get_schedules() -> ScheduleResponse:
             }
         })
 
-    return {"schedules": trains}
+    return ScheduleResponse(schedules=trains)
 
 class TicketData(BaseModel):
     reservation_id: str
@@ -215,6 +214,11 @@ class PurchasedTicketsResponse(BaseModel):
 def get_purchased_tickets(
     user: Annotated[User, Depends(app_auth_middleware)],
 ) -> PurchasedTicketsResponse:
+    # JA: このAPIは予約ページのリロード時に呼ばれるので、ユーザはアクティブだと判断してユーザーの最終アクティビティを更新する
+    # EN: This API is called when the reservation page is reloaded,
+    # so it determines that the user is active and updates the user's last activity.
+    update_last_activity_at(user.id)
+
     tickets = []
     with engine.begin() as conn:
         rows = conn.execute(
@@ -257,13 +261,10 @@ def get_purchased_tickets(
                 seats=[s[0] for s in seat_rows],
                 total_price=r[5],
                 entry_token=r[6],
-                qr_code_url=f"http://localhost:8080/api/qr/{r[7]}.png",
+                qr_code_url=f"/api/qr/{r[7]}.png",
                 is_entered=r[8]
             )
             tickets.append(ticket)
-
-    # このAPIは画面リロード時に呼ばれるので、ユーザはアクティブだと判断してユーザーの最終アクティビティを更新する
-    update_last_activity_at(user.id)
 
     return PurchasedTicketsResponse(tickets=tickets)
 
@@ -273,6 +274,7 @@ class PostReserveRequest(BaseModel):
     from_station_id: str
     to_station_id: str
     num_people: int
+
 
 class ReservationData(BaseModel):
     reservation_id: str
@@ -284,11 +286,13 @@ class ReservationData(BaseModel):
     total_price: int
     is_discounted: bool
 
+
 class PostReserveResponse(BaseModel):
     status: str
     reserved: ReservationData | None = None
     recommend: ReservationData | None = None
     error_code: str | None = None
+
 
 @app.post("/api/reserve")
 def post_reserve(
@@ -392,9 +396,12 @@ def post_purchase(
     user: Annotated[User, Depends(app_auth_middleware)],
     req: PostPurchaseRequest
 ) -> PostPurchaseResponse:
-    # FIXME: レコメンドした場合は20%の確率でチケットが購入されないので、
-    # その場合このエンドポイントが呼ばれず、予約のロックが残ってしまう。
+    # FIXME:
+    # JA: レコメンドした場合は20%の確率でチケットが購入されないので、その場合このエンドポイントが呼ばれず、予約のロックが残ってしまう。
     # ただ、それが発生するケースは少ないと信じて一旦放置
+    # EN: If recommended, there is a 20% chance the ticket will not be purchased.
+    # In that case, this endpoint will not be called, leaving the reservation locked.
+    # However, we believe this case is rare and are leaving it as is for now.
 
     update_last_activity_at(user.id)
 
@@ -419,10 +426,8 @@ def post_purchase(
     payment = Payment.model_validate(row)
 
     resp = capture_payment(payment.amount, user.global_payment_token)
-    print(resp)
-    payment_status = "success" if resp['status'] == 'accepted' else "failed"
+    payment_status = "success" if resp.status == 'accepted' else "failed"
 
-    release_lock(reservation.schedule_id)
     if payment_status == "success":
         with engine.begin() as conn:
             conn.execute(
@@ -431,6 +436,8 @@ def post_purchase(
             )
     else:
         release_seat_reservation(reservation)
+
+    release_lock(reservation.schedule_id)
 
     qr_image = generate_qr_image(reservation.entry_token)
     image_id = str(ULID())
@@ -445,9 +452,9 @@ def post_purchase(
 
     return PostPurchaseResponse(
         status=payment_status,
-        message=resp['message'],
+        message=resp.message,
         entry_token=reservation.entry_token if payment_status == "success" else "",
-        qr_code_url=f"http://localhost:8080/api/qr/{image_id}.png" if payment_status == "success" else ""
+        qr_code_url=f"/api/qr/{image_id}.png" if payment_status == "success" else ""
     )
 
 @app.get("/api/qr/{qr_id}.png")
@@ -488,7 +495,8 @@ def post_entry(
 
     reservation = Reservation.model_validate(row)
 
-    # 列車の発車時間を過ぎていないことを確認
+    # JA: 列車の発車時間を過ぎていないことを確認
+    # EN: Confirm that the train has not departed yet
     if reservation.departure_at < get_application_clock():
         return PostEntryResponse(
             status="train_departed",
@@ -576,20 +584,23 @@ class SessionResponse(BaseModel):
     status: str
     next_check: int
 
+
 @app.get("/api/session")
 def get_session(
     user: Annotated[User, Depends(app_auth_middleware)],
     res: Response
 ) -> SessionResponse:
-    # 開発中に短時間でセッションが切れるのは不便なので、ishoconユーザはセッションを切れないようにしておくのがおすすめ
+    # JA: 開発中に短時間でセッションが切れるのは不便なので、ishoconユーザはセッションを切れないようにしておくと便利
+    # EN: During development, it is inconvenient for the session to expire in a short time,
     if user.name == "ishocon":
         return SessionResponse(
             status="active",
             next_check=9999999999
         )
 
-    # `idle_timeout_sec` 秒以上アクティブでないユーザはログアウトさせる
-    if user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"])):
+    # JA: `idle_timeout_sec` 秒以上アクティブでないユーザはログアウトさせる
+    # EN: Log out users who have been inactive for more than `idle_timeout_sec` seconds
+    if user.last_activity_at and (user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"]))):
         res.set_cookie(key="user_name", value=None, httponly=True)
         return SessionResponse(
             status="session_expired",
@@ -601,7 +612,7 @@ def get_session(
     )
 
 
-## ログインページ
+## Login Page
 
 class LoginRequest(BaseModel):
     name: str
@@ -686,6 +697,7 @@ def get_waiting_status(
         status=status,
         next_check=WAITING_ROOM_CONFIG["polling_interval_ms"]
     )
+
 
 ## Admin API
 

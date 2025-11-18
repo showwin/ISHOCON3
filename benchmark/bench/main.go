@@ -41,7 +41,6 @@ type Scenario struct {
 type InitializeResponse struct {
 	InitializedAt time.Time `json:"initialized_at"`
 	AppLanguage   string    `json:"app_language"`
-	UiLanguage    string    `json:"ui_language"`
 }
 
 // type BoughtSeat struct {
