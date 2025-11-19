@@ -136,6 +136,21 @@ The same user may log in again, but in that case, they will try to purchase tick
 Regarding the number of tickets purchased, there are diverse users including individual travelers, customers purchasing on behalf of their families, and group tour guides, ranging from 1 to 30 tickets.
 
 
+## Ticket Pricing
+
+Ticket prices are calculated at the time of reservation. Each segment costs 1000 yen, and the price increases according to the number of segments. For example, purchasing 2 segments from Station A to Station C costs 2000 yen, and purchasing 4 segments from Station A to Station E costs 4000 yen.
+
+However, since ticket purchasers prefer to sit together in the same row as much as possible, if the allocated seats are excessively fragmented, the ticket price will be sold at half price. For example, when reserving 6 tickets for a train schedule with 3 seats per row, if the seats can be secured in 2 rows, it costs the standard 6000 yen per segment, but if they are split across 3 rows, the price becomes 3000 yen.
+
+Seat positions are represented as `number-letter`, where the number represents the row and the letter represents the seat position. For example, in a train with 3 seats wide per row, letters range from `A` to `C`, and `3-A` represents seat A in row 3.
+
+In the above example, seat assignments would be as follows:
+When 6 seats can be secured in 2 rows: `3-A`, `3-B`, `3-C`, `4-A`, `4-B`, `4-C`
+When split across 3 rows: `3-B`, `3-C`, `4-A`, `4-B`, `4-C`, `5-A`
+
+To maximize revenue, it is necessary to devise a seat allocation algorithm that minimizes seat fragmentation.
+
+
 ## Ticket Purchase
 
 When a ticket purchaser makes a reservation request, the application checks with an external payment system whether seats can be secured under those conditions and whether the purchaser has the credit to pay the purchase amount.
@@ -145,8 +160,6 @@ Regarding seat reservation, if seats were shown as available in the schedule lis
 Regarding credit verification, each user has a predetermined amount of credit, and if they try to purchase an amount exceeding that, an error will be returned from the payment system.
 
 When a ticket purchase is completed, the ticket is counted as `unconfirmed sales`. As explained below, purchasers may not actually board the train, so it is treated as `unconfirmed sales` until entry.
-
-TODO: Ticket prices
 
 
 ## About Entry
