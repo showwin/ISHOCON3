@@ -1,18 +1,15 @@
 version: "3"
 
+includes:
+  python: ./taskfile/python/
+  ruby: ./taskfile/ruby/
+
 tasks:
-  # init:
-  #   cmds:
-  #     - go install github.com/sqldef/sqldef/cmd/mysqldef@latest
-  build:
+  initialize:
     cmds:
-      - docker compose -f compose-python.yml build
-    dir: ./development/
-  up:
+      - curl -X POST http://localhost:8080/api/initialize
+
+  benchmark:
     cmds:
-      - docker compose -f compose-python.yml up -d
-    dir: ./development/
-  down:
-    cmds:
-      - docker compose -f compose-python.yml down -v --remove-orphans
-    dir: ./development/
+      - go build -o benchmark && ./benchmark --log-level info
+    dir: ./benchmark/

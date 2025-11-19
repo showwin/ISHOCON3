@@ -1,0 +1,28 @@
+version: "3"
+
+tasks:
+  default:
+    cmds:
+      - docker compose -f docker-compose.base.yml -f docker-compose.ruby.yml {{.CLI_ARGS}}
+    dir: ./development/
+
+  build:
+    cmds:
+      - task: default
+        vars:
+          CLI_ARGS: build
+    dir: ./development/
+
+  up:
+    cmds:
+      - task: default
+        vars:
+          CLI_ARGS: up -d
+    dir: ./development/
+
+  down:
+    cmds:
+      - task: default
+        vars:
+          CLI_ARGS: down -v --remove-orphans
+    dir: ./development/

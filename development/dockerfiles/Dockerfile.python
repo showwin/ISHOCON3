@@ -8,8 +8,9 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
  && rm -rf /var/lib/apt/lists/*
 
 COPY ./pyproject.toml ./pyproject.toml
-RUN pip install uv && uv sync
-# --locked --no-dev
+
+RUN pip install uv && uv sync # --locked --no-dev
+
 COPY . .
 
 CMD ["/home/ishocon/webapp/python/.venv/bin/gunicorn", "--bind", "0.0.0.0:8080"]
