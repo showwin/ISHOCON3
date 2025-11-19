@@ -27,12 +27,13 @@ uv sync
 # cd /home/ishocon/webapp/go
 # go build -o webapp *.go
 
-# Load data into MySQL
+# Initialize MySQL
 sudo chown -R mysql:mysql /var/lib/mysql
 sudo service mysql start
 sudo mysql -u root -pishocon -e 'CREATE DATABASE IF NOT EXISTS ishocon3;'
 sudo mysql -u root -pishocon -e "CREATE USER IF NOT EXISTS ishocon IDENTIFIED BY 'ishocon';"
 sudo mysql -u root -pishocon -e 'GRANT ALL ON *.* TO ishocon;'
+sudo sh /home/ishocon/webapp/sql/init.sh
 
 # Nginx
 sudo nginx -t

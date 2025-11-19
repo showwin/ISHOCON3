@@ -38,3 +38,10 @@ For more detailed log output, run:
 ```
 $ ./benchmark --log-level info
 ```
+
+If you want to trace behavior of a specific user, run:
+
+```
+$ ./benchmark --log-level debug > debug.log 2>&1
+$ cat debug.log | grep "user12345"
+```
