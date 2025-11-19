@@ -21,9 +21,8 @@
       <div class="d-flex ms-auto align-items-center">
         <span id="current-time-display" class="text-white me-3">--:--</span>
         <span id="initialize-button-container" class="me-3"></span>
-        <span class="text-white me-3">Taro</span>
-        <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
-        <button id="language-toggle" class="btn btn-outline-light btn-sm">EN</button>
+        <button id="language-toggle" class="btn btn-outline-light btn-sm me-3">EN</button>
+        <button id="logout-button" class="btn btn-outline-light btn-sm">ログアウト</button>
       </div>
     </div>
   </nav>
@@ -229,7 +228,7 @@
           section: "Section:",
           seats: "Seats:",
           totalPrice: "Total:",
-          yen: "JPY",
+          yen: "yen",
           refundConfirm: "Do you want to refund this ticket?",
           trainDeparted: "The train has already departed. Do you want a refund?",
           sameStationError: "Boarding and alighting stations are the same. Please select different stations.",
@@ -764,7 +763,8 @@
         });
         if (res.ok) {
           // ログアウト成功時にログインページへ遷移
-          location.href = '/login.html';
+          const lang = currentLang === 'ja' ? '' : '?lang=' + currentLang;
+          location.href = '/login.html' + lang;
         } else {
           console.error('ログアウトに失敗しました');
           // 必要であればエラー表示など

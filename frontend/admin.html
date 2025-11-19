@@ -12,11 +12,11 @@
 <body class="bg-light">
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
-      <span class="navbar-brand">Ishokansen Reservation Admin</span>
+      <span class="navbar-brand" id="admin-brand">Ishokansen Reservation Admin</span>
       <div class="d-flex ms-auto align-items-center">
         <span id="current-time-display" class="text-white me-3">--:--</span>
-        <span class="text-white me-3">Admin</span>
         <button id="logout-button" class="btn btn-outline-light btn-sm me-3">ログアウト</button>
+        <button id="language-toggle" class="btn btn-outline-light btn-sm">EN</button>
       </div>
     </div>
   </nav>
@@ -24,12 +24,12 @@
   <div class="container my-4">
     <!-- 1. 累計売上・返金表示 -->
     <section class="mb-5">
-      <h2 class="mb-3">累計売上・返金情報</h2>
+      <h2 class="mb-3" id="stats-title">累計売上・返金情報</h2>
       <div id="stats-area" class="row g-3">
         <div class="col-md-4">
           <div class="card">
             <div class="card-body">
-              <h5>累計売上</h5>
+              <h5 id="total-sales-label">累計売上</h5>
               <p id="total-sales" class="fs-4">--円</p>
             </div>
           </div>
@@ -37,7 +37,7 @@
         <div class="col-md-4">
           <div class="card">
             <div class="card-body">
-              <h5>累計返金</h5>
+              <h5 id="total-refunds-label">累計返金</h5>
               <p id="total-refunds" class="fs-4">--円</p>
             </div>
           </div>
@@ -47,15 +47,15 @@
 
     <!-- 2. 車両毎の販売情報 -->
     <section class="mb-5">
-      <h2 class="mb-3">車両毎の販売状況</h2>
+      <h2 class="mb-3" id="train-sales-title">車両毎の販売状況</h2>
       <table class="table table-striped table-bordered">
         <thead class="table-light">
           <tr>
-            <th>車両名</th>
-            <th>販売枚数</th>
-            <th>未確定売上</th>
-            <th>確定売上</th>
-            <th>返金</th>
+            <th id="train-name-header">車両名</th>
+            <th id="tickets-sold-header">販売枚数</th>
+            <th id="pending-revenue-header">未確定売上</th>
+            <th id="confirmed-revenue-header">確定売上</th>
+            <th id="refunds-header">返金</th>
           </tr>
         </thead>
         <tbody id="train-sales-tbody">
@@ -66,25 +66,25 @@
 
     <!-- 3. 車両追加フォーム -->
     <section>
-      <h2 class="mb-3">車両の追加</h2>
+      <h2 class="mb-3" id="add-train-title">車両の追加</h2>
       <form id="add-train-form" class="mb-3">
         <div class="mb-3">
-          <label for="train-name" class="form-label">車両名</label>
+          <label for="train-name" class="form-label" id="train-name-label">車両名</label>
           <input type="text" class="form-control" id="train-name" required>
         </div>
         <div class="mb-3">
-          <label for="model-select" class="form-label">モデル名</label>
+          <label for="model-select" class="form-label" id="model-name-label">モデル名</label>
           <select id="model-select" class="form-select" required>
           </select>
         </div>
         <div class="mb-3">
-          <label class="form-label">A駅出発時間</label>
+          <label class="form-label" id="departure-times-label">A駅出発時間</label>
           <div id="departure-times-container"></div>
           <button type="button" id="add-time-button" class="btn btn-sm btn-outline-primary mt-2">
-            <i class="bi bi-plus-circle"></i> 追加
+            <i class="bi bi-plus-circle"></i> <span id="add-time-text">追加</span>
           </button>
         </div>
-        <button type="submit" class="btn btn-primary">車両追加</button>
+        <button type="submit" class="btn btn-primary" id="submit-train-button">車両追加</button>
       </form>
       <div id="add-train-message" class="text-success"></div>
     </section>
@@ -94,6 +94,105 @@
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+    // i18n translations
+    const translations = {
+      ja: {
+        pageTitle: "管理ページ",
+        adminBrand: "Ishokansen Reservation Admin",
+        logout: "ログアウト",
+        statsTitle: "累計売上・返金情報",
+        totalSales: "累計売上",
+        totalRefunds: "累計返金",
+        trainSalesTitle: "車両毎の販売状況",
+        trainName: "車両名",
+        ticketsSold: "販売枚数",
+        pendingRevenue: "未確定売上",
+        confirmedRevenue: "確定売上",
+        refunds: "返金",
+        addTrainTitle: "車両の追加",
+        trainNameLabel: "車両名",
+        modelName: "モデル名",
+        departureTimes: "A駅出発時間",
+        add: "追加",
+        submitTrain: "車両追加",
+        yen: "円",
+        trainAdded: "車両が追加されました。",
+        addFailed: "追加に失敗しました。",
+        requiredFields: "必須項目を入力してください。",
+        maxTimesReached: "これ以上追加できません"
+      },
+      en: {
+        pageTitle: "Admin Page",
+        adminBrand: "Ishokansen Reservation Admin",
+        logout: "Logout",
+        statsTitle: "Total Sales & Refund Information",
+        totalSales: "Total Sales",
+        totalRefunds: "Total Refunds",
+        trainSalesTitle: "Sales Status by Train",
+        trainName: "Train Name",
+        ticketsSold: "Tickets Sold",
+        pendingRevenue: "Pending Revenue",
+        confirmedRevenue: "Confirmed Revenue",
+        refunds: "Refunds",
+        addTrainTitle: "Add Train",
+        trainNameLabel: "Train Name",
+        modelName: "Model Name",
+        departureTimes: "Departure Times from Station A",
+        add: "Add",
+        submitTrain: "Add Train",
+        yen: "",
+        trainAdded: "Train has been added.",
+        addFailed: "Failed to add train.",
+        requiredFields: "Please fill in all required fields.",
+        maxTimesReached: "Cannot add more times"
+      }
+    };
+
+    function getLanguageFromURL() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const lang = urlParams.get('lang');
+      return (lang === 'en' || lang === 'ja') ? lang : 'ja';
+    }
+
+    let currentLang = getLanguageFromURL();
+
+    function t(key) {
+      const keys = key.split('.');
+      let value = translations[currentLang];
+      for (const k of keys) {
+        value = value?.[k];
+      }
+      return value || key;
+    }
+
+    function setLanguageInURL(lang) {
+      const url = new URL(window.location);
+      url.searchParams.set('lang', lang);
+      window.history.replaceState({}, '', url);
+    }
+
+    function updateUILanguage() {
+      document.title = t('pageTitle') + " - Ishokansen Reservation";
+      document.getElementById('admin-brand').textContent = t('adminBrand');
+      document.getElementById('logout-button').textContent = t('logout');
+      document.getElementById('language-toggle').textContent = currentLang === 'ja' ? 'EN' : 'JP';
+      document.getElementById('stats-title').textContent = t('statsTitle');
+      document.getElementById('total-sales-label').textContent = t('totalSales');
+      document.getElementById('total-refunds-label').textContent = t('totalRefunds');
+      document.getElementById('train-sales-title').textContent = t('trainSalesTitle');
+      document.getElementById('train-name-header').textContent = t('trainName');
+      document.getElementById('tickets-sold-header').textContent = t('ticketsSold');
+      document.getElementById('pending-revenue-header').textContent = t('pendingRevenue');
+      document.getElementById('confirmed-revenue-header').textContent = t('confirmedRevenue');
+      document.getElementById('refunds-header').textContent = t('refunds');
+      document.getElementById('add-train-title').textContent = t('addTrainTitle');
+      document.getElementById('train-name-label').textContent = t('trainNameLabel');
+      document.getElementById('model-name-label').textContent = t('modelName');
+      document.getElementById('departure-times-label').textContent = t('departureTimes');
+      document.getElementById('add-time-text').textContent = t('add');
+      document.getElementById('submit-train-button').textContent = t('submitTrain');
+    }
+
     const MAX_TIMES = 20;
     let departureTimeCount = 0;
     let trainModels = [];
@@ -104,6 +203,7 @@
     document.addEventListener('DOMContentLoaded', init);
 
     async function init() {
+      updateUILanguage();
       await loadStats();
       await loadTrainSales();
       await loadTrainModels();
@@ -115,6 +215,7 @@
       startClockSimulation();
       initAddTrainForm();
       initLogoutButton();
+      initLanguageToggle();
     }
 
     async function fetchCurrentTime() {
@@ -160,10 +261,22 @@
           method: 'POST'
         });
         if (res.ok) {
-          location.href = '/login.html';
+          const lang = currentLang === 'ja' ? '' : '?lang=' + currentLang;
+          location.href = '/login.html' + lang;
         } else {
           console.error('ログアウトに失敗しました');
         }
+      });
+    }
+
+    function initLanguageToggle() {
+      const languageToggle = document.getElementById('language-toggle');
+      languageToggle?.addEventListener('click', () => {
+        currentLang = currentLang === 'ja' ? 'en' : 'ja';
+        setLanguageInURL(currentLang);
+        updateUILanguage();
+        // Reload stats with updated language
+        loadStats();
       });
     }
 
@@ -171,10 +284,11 @@
       const res = await fetch('/api/admin/stats');
       if (res.ok) {
         const data = await res.json();
-        document.getElementById('total-sales').textContent = data.total_sales + '円';
-        document.getElementById('total-refunds').textContent = data.total_refunds + '円';
+        document.getElementById('total-sales').textContent = data.total_sales + t('yen');
+        document.getElementById('total-refunds').textContent = data.total_refunds + t('yen');
       } else {
-        location.href = '/login.html';
+        const lang = currentLang === 'ja' ? '' : '?lang=' + currentLang;
+        location.href = '/login.html' + lang;
       }
     }
 
@@ -191,13 +305,13 @@
     function renderTrainSales(trains) {
       const tbody = document.getElementById('train-sales-tbody');
       tbody.innerHTML = '';
-      trains.forEach(t => {
+      trains.forEach(train => {
         const tr = document.createElement('tr');
-        const tdName = document.createElement('td'); tdName.textContent = t.train_name; tr.appendChild(tdName);
-        const tdTickets = document.createElement('td'); tdTickets.textContent = t.tickets_sold; tr.appendChild(tdTickets);
-        const tdPending = document.createElement('td'); tdPending.textContent = t.pending_revenue + '円'; tr.appendChild(tdPending);
-        const tdConfirmed = document.createElement('td'); tdConfirmed.textContent = t.confirmed_revenue + '円'; tr.appendChild(tdConfirmed);
-        const tdRefunds = document.createElement('td'); tdRefunds.textContent = t.refunds + '円'; tr.appendChild(tdRefunds);
+        const tdName = document.createElement('td'); tdName.textContent = train.train_name; tr.appendChild(tdName);
+        const tdTickets = document.createElement('td'); tdTickets.textContent = train.tickets_sold; tr.appendChild(tdTickets);
+        const tdPending = document.createElement('td'); tdPending.textContent = train.pending_revenue + t('yen'); tr.appendChild(tdPending);
+        const tdConfirmed = document.createElement('td'); tdConfirmed.textContent = train.confirmed_revenue + t('yen'); tr.appendChild(tdConfirmed);
+        const tdRefunds = document.createElement('td'); tdRefunds.textContent = train.refunds + t('yen'); tr.appendChild(tdRefunds);
         tbody.appendChild(tr);
       });
     }
@@ -236,7 +350,7 @@
         if (departureTimeCount < MAX_TIMES) {
           addDepartureTimeInput(container);
         } else {
-          alert('これ以上追加できません');
+          alert(t('maxTimesReached'));
         }
       });
 
@@ -248,7 +362,7 @@
         const times = getDepartureTimes(container);
 
         if (!trainName || !modelName || times.length === 0) {
-          alert('必須項目を入力してください。');
+          alert(t('requiredFields'));
           return;
         }
 
@@ -265,17 +379,17 @@
         if (res.ok) {
           const data = await res.json();
           if (data.status === 'success') {
-            messageDiv.textContent = '車両が追加されました。';
+            messageDiv.textContent = t('trainAdded');
             form.reset();
             container.innerHTML = '';
             departureTimeCount = 0;
             addDepartureTimeInput(container);
           } else {
-            messageDiv.textContent = '追加に失敗しました。';
+            messageDiv.textContent = t('addFailed');
           }
         } else {
           console.error('Failed to add train');
-          messageDiv.textContent = '追加に失敗しました。';
+          messageDiv.textContent = t('addFailed');
         }
       });
     }

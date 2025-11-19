@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ウェイティングルーム - Ishokansen Reservation</title>
+  <title>Waiting Room - Ishokansen Reservation</title>
   <!-- Bootstrap v5.3 CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <!-- Bootstrap Icons -->
@@ -80,13 +80,16 @@
     <div class="container-fluid">
       <a class="navbar-brand d-flex align-items-center" href="#">
         <span class="fs-5 fw-bold">Ishokansen Reservation</span>
-        <span class="ms-2 text-white-50" style="font-size: 0.9rem;">新幹線チケット予約</span>
+        <span class="ms-2 text-white-50" style="font-size: 0.9rem;" id="header-subtitle">新幹線チケット予約</span>
       </a>
+      <div class="d-flex ms-auto align-items-center">
+        <button id="language-toggle" class="btn btn-outline-light btn-sm">EN</button>
+      </div>
     </div>
   </nav>
 
   <div class="container my-5 text-center">
-    <h2 class="mb-4">ウェイティングルーム</h2>
+    <h2 class="mb-4" id="waiting-title">Waiting Room</h2>
     <div class="mb-4" id="waiting-message">しばらくお待ちください...</div>
 
     <!-- 家、病院、バッグがあるライン(ラベルなし) -->
@@ -112,32 +115,94 @@
       <i class="bi bi-train-front train-icon"></i>
     </div>
 
-    <p class="mt-3">順番待ち中です。もう少々お待ちください。</p>
+    <p class="mt-3" id="waiting-description">順番待ち中です。もう少々お待ちください。</p>
   </div>
 
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script>
+    // i18n translations
+    const translations = {
+      ja: {
+        pageTitle: "新幹線チケット予約",
+        waitingTitle: "Waiting Room",
+        waitingMessage: "しばらくお待ちください...",
+        waitingDescription: "順番待ち中です。もう少々お待ちください。",
+        stillWaiting: "まだ順番待ちです...",
+        errorReload: "エラーが発生しました。ページをリロードしてください。",
+        errorRetry: "エラーが発生しました。後ほど再度お試しください。"
+      },
+      en: {
+        pageTitle: "Bullet Train Ticket Reservation",
+        waitingTitle: "Waiting Room",
+        waitingMessage: "Please wait a moment...",
+        waitingDescription: "You are in the queue. Please wait a little longer.",
+        stillWaiting: "Still waiting...",
+        errorReload: "An error occurred. Please reload the page.",
+        errorRetry: "An error occurred. Please try again later."
+      }
+    };
+
+    function getLanguageFromURL() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const lang = urlParams.get('lang');
+      return (lang === 'en' || lang === 'ja') ? lang : 'ja';
+    }
+
+    let currentLang = getLanguageFromURL();
+
+    function t(key) {
+      const keys = key.split('.');
+      let value = translations[currentLang];
+      for (const k of keys) {
+        value = value?.[k];
+      }
+      return value || key;
+    }
+
+    function setLanguageInURL(lang) {
+      const url = new URL(window.location);
+      url.searchParams.set('lang', lang);
+      window.history.replaceState({}, '', url);
+    }
+
+    function updateUILanguage() {
+      document.title = t('waitingTitle') + " - Ishokansen Reservation";
+      document.getElementById('header-subtitle').textContent = t('pageTitle');
+      document.getElementById('language-toggle').textContent = currentLang === 'ja' ? 'EN' : 'JP';
+      document.getElementById('waiting-title').textContent = t('waitingTitle');
+      document.getElementById('waiting-description').textContent = t('waitingDescription');
+    }
+
     async function checkStatus() {
       const res = await fetch('/api/waiting_status');
       if (!res.ok) {
-        document.getElementById('waiting-message').textContent = 'エラーが発生しました。ページをリロードしてください。';
+        document.getElementById('waiting-message').textContent = t('errorReload');
         return;
       }
       const data = await res.json();
 
       if (data.status === 'ready') {
-        location.href = '/index.html';
+        const lang = currentLang === 'ja' ? '' : '?lang=' + currentLang;
+        location.href = '/index.html' + lang;
       } else if (data.status === 'waiting') {
-        document.getElementById('waiting-message').textContent = 'まだ順番待ちです...';
+        document.getElementById('waiting-message').textContent = t('stillWaiting');
         setTimeout(checkStatus, data.next_check);
       } else {
-        document.getElementById('waiting-message').textContent = 'エラーが発生しました。後ほど再度お試しください。';
+        document.getElementById('waiting-message').textContent = t('errorRetry');
       }
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+      updateUILanguage();
       checkStatus();
+
+      const languageToggle = document.getElementById('language-toggle');
+      languageToggle?.addEventListener('click', () => {
+        currentLang = currentLang === 'ja' ? 'en' : 'ja';
+        setLanguageInURL(currentLang);
+        updateUILanguage();
+      });
     });
   </script>
 </body>
