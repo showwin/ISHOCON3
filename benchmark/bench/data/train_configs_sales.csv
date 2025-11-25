@@ -1,4 +1,4 @@
-model,name_prefix,first_departure_time
+model_name,name_prefix,first_departure_time
 First-3,55,00:55
 First-3,56,01:10
 Business-4,79,02:10
