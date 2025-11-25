@@ -109,9 +109,91 @@ func Run(targetURL string, logLevel string) {
 	// Start admin scenario
 	go scenario.RunAdminScenario(ctx)
 
+	// Define worker counts per sales phase.
+	// <sales> => <total workers>
+	// 0 => 15
+	// 1000 => 20
+	// 3000 => 25
+	// 10000 => 40
+	// 50000 => 80
+	// 200000 => 150
+	// 500000 => 200
+	// 1000000 => 300
+	phaseWorkerCounts := []int{15, 20, 25, 40, 80, 150, 200, 300}
+
+	// Calculate total workers needed
+	totalWorkers := phaseWorkerCounts[len(phaseWorkerCounts)-1]
+
+	// Use atomic counter to assign worker IDs since workerID from isucandar is -1 with InfinityLoop
+	var workerIDCounter atomic.Int32
+
+	// Monitor sales phase changes and log ad campaign launches
+	go func() {
+		lastPhase := int32(-1)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				currentPhase := scenario.currentSalesPhaseIndex.Load()
+				if currentPhase != lastPhase && currentPhase > 0 && int(currentPhase) < len(phaseWorkerCounts) {
+					newWorkers := phaseWorkerCounts[currentPhase]
+					oldWorkers := phaseWorkerCounts[currentPhase-1]
+
+					if newWorkers > oldWorkers {
+						currentTimeStr := getApplicationClock(scenario.initializedAt)
+						slog.Info("New ad campaign launched!",
+							"sales_phase", fmt.Sprintf("%d/%d", currentPhase, len(salesPhases)),
+							"active_buyers", newWorkers,
+							"previous_buyers", oldWorkers,
+							"current_time", currentTimeStr,
+							"user", "admin",
+						)
+					}
+					lastPhase = currentPhase
+				}
+			}
+		}
+	}()
+
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
+		// Assign a unique ID to this worker goroutine
+		myWorkerID := int(workerIDCounter.Add(1) - 1)
+
+		// Determine which phase this worker belongs to
+		// Workers 0-9 belong to phase 0 (10 workers)
+		// Workers 10-14 belong to phase 1 (15 workers total)
+		// Workers 15-19 belong to phase 2 (20 workers total), etc.
+		workerPhase := len(phaseWorkerCounts) - 1 // Default to last phase
+		for i := 0; i < len(phaseWorkerCounts); i++ {
+			if myWorkerID < phaseWorkerCounts[i] {
+				workerPhase = i
+				break
+			}
+		}
+
+		// Wait until this worker's phase is reached
+		for {
+			currentPhase := scenario.currentSalesPhaseIndex.Load()
+			if currentPhase >= int32(workerPhase) {
+				break
+			}
+
+			// Check if context is cancelled
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(100 * time.Millisecond):
+				// Continue waiting
+			}
+		}
+
+		// Run the user scenario
 		scenario.RunUserScenario(ctx)
-	}, worker.WithMaxParallelism(100))
+	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(int32(totalWorkers)))
 	if err != nil {
 		panic(err)
 	}
