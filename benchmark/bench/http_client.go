@@ -44,6 +44,8 @@ func HttpPost(ctx context.Context, agent *agent.Agent, path string, body io.Read
 		return HttpResponse{}, err
 	}
 
+	req.Header.Set("Content-Type", "application/json")
+
 	resp, err := agent.Do(ctx, req)
 	if err != nil {
 		return HttpResponse{}, err

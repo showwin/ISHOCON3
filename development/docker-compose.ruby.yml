@@ -1,0 +1,25 @@
+services:
+  webapp:
+    tty: true
+    stdin_open: true
+    build:
+      context: ../webapp/ruby
+      dockerfile: ../../development/dockerfiles/Dockerfile.ruby
+    image: webapp-ruby
+    expose:
+      - 8080
+    volumes:
+      - ../webapp/sql:/home/ishocon/webapp/sql
+      - ../webapp/ruby:/home/ishocon/webapp/ruby
+    working_dir: /home/ishocon/webapp/ruby
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      RACK_ENV: production
+      ISHOCON_DB_HOST: db
+      ISHOCON_DB_OPTIONS: "--ssl-verify-server-cert=FALSE"
+      ISHOCON_PAYMENT_HOST: payment_app
+      ISHOCON_PAYMENT_PORT: 8081
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -21,7 +21,7 @@ DROP TABLE IF EXISTS `trains`;
 CREATE TABLE `trains` (
   `id` int NOT NULL AUTO_INCREMENT COMMENT '列車筐体ID',
   `name` varchar(30) NOT NULL COMMENT '列車筐体名',
-  `model_name` varchar(30) NOT NULL COMMENT 'モデル名',
+  `model` varchar(30) NOT NULL COMMENT 'モデル名',
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

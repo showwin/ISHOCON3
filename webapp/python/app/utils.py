@@ -178,6 +178,16 @@ def get_stations_between(start: str, end: str) -> list[str]:
     return station_ids[start_index:end_index + 1]
 
 
+def calculate_distance(start, end):
+    stations = ["A", "B", "C", "D", "E", "Dr", "Cr", "Br", "Ar"]
+    if start > end:
+        end = end + "r"
+
+    start_index = stations.index(start)
+    end_index = stations[start_index:].index(end) + start_index
+    return end_index - start_index
+
+
 def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[int, bool]:
     distance = calculate_distance(reservation.from_station_id, reservation.to_station_id)
     num_seats = len(seats)
@@ -189,7 +199,7 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
             text("""
                  SELECT seat_columns
                  FROM train_models tm
-                 INNER JOIN trains t ON t.model_name = tm.name
+                 INNER JOIN trains t ON t.model = tm.name
                  INNER JOIN train_schedules ts ON ts.train_id = t.id
                  INNER JOIN reservations r ON r.schedule_id = ts.id
                  WHERE r.id = :reservation_id
@@ -229,16 +239,6 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
         previous_seat = seat
 
     return full_price, False
-
-
-def calculate_distance(start, end):
-    stations = ["A", "B", "C", "D", "E", "Dr", "Cr", "Br", "Ar"]
-    if start > end:
-        end = end + "r"
-
-    start_index = stations.index(start)
-    end_index = stations[start_index:].index(end) + start_index
-    return end_index - start_index
 
 
 def get_departure_at(schedule_id: str, from_station_id: str, to_station_id: str) -> str:

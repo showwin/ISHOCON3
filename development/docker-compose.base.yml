@@ -9,28 +9,6 @@ services:
       - "8080:80"
     depends_on:
       - webapp
-  webapp:
-    build:
-      context: ../webapp/python
-      dockerfile: ../../development/dockerfiles/Dockerfile.python
-    image: webapp-python
-    expose:
-      - 8080
-    volumes:
-      - ../webapp/sql:/home/ishocon/webapp/sql
-    working_dir: /home/ishocon/webapp/python
-    depends_on:
-      db:
-        condition: service_healthy
-      # payment_app:
-      #   condition: service_healthy
-    environment:
-      ISHOCON_DB_HOST: db
-      ISHOCON_DB_OPTIONS: "--ssl-verify-server-cert=FALSE"
-      ISHOCON_PAYMENT_HOST: payment_app
-      ISHOCON_PAYMENT_PORT: 8081
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
   payment_app:
     build:
       context: ../payment_app/

@@ -159,7 +159,7 @@ def get_schedules() -> ScheduleResponse:
                         SELECT train_models.seat_rows * train_models.seat_columns AS total_seats
                         FROM trains
                         INNER JOIN train_models
-                        ON trains.model_name = train_models.name
+                        ON trains.model = train_models.name
                         WHERE trains.id = :train_id;
                     """),
                     {"train_id": train.id},
@@ -215,8 +215,7 @@ def get_purchased_tickets(
     user: Annotated[User, Depends(app_auth_middleware)],
 ) -> PurchasedTicketsResponse:
     # JA: このAPIは予約ページのリロード時に呼ばれるので、ユーザはアクティブだと判断してユーザーの最終アクティビティを更新する
-    # EN: This API is called when the reservation page is reloaded,
-    # so it determines that the user is active and updates the user's last activity.
+    # EN: This API is called when the reservation page is reloaded, so it determines that the user is active and updates the user's last activity.
     update_last_activity_at(user.id)
 
     tickets = []
@@ -822,10 +821,10 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
     with engine.begin() as conn:
         conn.execute(
             text("""
-                INSERT INTO trains (name, model_name)
-                VALUES (:name, :model_name)
+                INSERT INTO trains (name, model)
+                VALUES (:name, :model)
                 """),
-            {"name": req.train_name, "model_name": req.model_name}
+            {"name": req.train_name, "model": req.model_name}
         )
 
         row = conn.execute(
@@ -890,8 +889,8 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
             ).fetchone()
             train = Train.model_validate(row)
             row = conn.execute(
-                text("SELECT * FROM train_models WHERE name = :model_name"),
-                {"model_name": train.model_name},
+                text("SELECT * FROM train_models WHERE name = :model"),
+                {"model": train.model},
             ).fetchone()
             train_model = TrainModel.model_validate(row)
 

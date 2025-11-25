@@ -7,7 +7,7 @@ insert into train_models (`name`, `seat_rows`, `seat_columns`) values
 ("First-3", 5, 3),
 ("Luxury-2", 2, 2);
 
-insert into trains (`id`, `name`, `model_name`) values
+insert into trains (`id`, `name`, `model`) values
 (1, "E5001", "Economy-5"),
 (2, "E5002", "Economy-5"),
 (3, "E5003", "Economy-5"),

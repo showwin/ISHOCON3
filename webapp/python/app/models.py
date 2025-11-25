@@ -36,7 +36,7 @@ class TrainModel(BaseModel):
 class Train(BaseModel):
     id: int
     name: str
-    model_name: str
+    model: str
 
 
 class TrainSchedule(BaseModel):
