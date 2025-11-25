@@ -33,7 +33,7 @@ sudo service mysql start
 sudo mysql -u root -pishocon -e 'CREATE DATABASE IF NOT EXISTS ishocon3;'
 sudo mysql -u root -pishocon -e "CREATE USER IF NOT EXISTS ishocon IDENTIFIED BY 'ishocon';"
 sudo mysql -u root -pishocon -e 'GRANT ALL ON *.* TO ishocon;'
-sudo sh /home/ishocon/webapp/sql/init.sh
+sudo ISHOCON_DB_OPTIONS="" sh /home/ishocon/webapp/sql/init.sh
 
 # Nginx
 sudo nginx -t
