@@ -1,0 +1,31 @@
+version: '3'
+
+tasks:
+  delete-scoreboard-data:
+    desc: Delete all scoreboard data
+    cmds:
+      - terraform output -raw apigateway_url | xargs -I {} curl -X "DELETE" "{}teams"
+
+  close-scoreboard:
+    desc: Close the scoreboard (require AWS IAM authentication)
+    cmds:
+      - aws apigatewayv2 update-route --api-id $(terraform output -raw api_gateway_id) --route-id $(terraform output -raw api_gateway_get_route_id) --authorization-type AWS_IAM > /dev/null
+      - echo "Scoreboard is closed."
+
+  reopen-scoreboard:
+    desc: Reopen the scoreboard (remove authentication)
+    cmds:
+      - aws apigatewayv2 update-route --api-id $(terraform output -raw api_gateway_id) --route-id $(terraform output -raw api_gateway_get_route_id) --authorization-type NONE > /dev/null
+      - echo "Scoreboard is reopened."
+
+  freeze-scoreboard:
+    desc: Freeze the scoreboard (prevent new score submissions)
+    cmds:
+      - aws apigatewayv2 update-route --api-id $(terraform output -raw api_gateway_id) --route-id $(terraform output -raw api_gateway_put_route_id) --authorization-type AWS_IAM > /dev/null
+      - echo "Scoreboard is freezed."
+
+  unfreeze-scoreboard:
+    desc: Unfreeze the scoreboard (allow new score submissions)
+    cmds:
+      - aws apigatewayv2 update-route --api-id $(terraform output -raw api_gateway_id) --route-id $(terraform output -raw api_gateway_put_route_id) --authorization-type NONE > /dev/null
+      - echo "Scoreboard can accepts new score."

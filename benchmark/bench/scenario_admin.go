@@ -136,27 +136,45 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			}
 			s.log.Info("GET /api/admin/train_sales", "user", "admin")
 
-			// Validate stats against benchmark data with 20% tolerance
-			benchmarkSales := s.totalSales.Load()
-			benchmarkRefunds := s.totalRefunds.Load()
+			// Record current benchmark values before waiting
+			minExpectedSales := s.totalSales.Load()
+			minExpectedRefunds := s.totalRefunds.Load()
+			minExpectedTickets := s.totalTickets.Load()
 
-			// Check if sales is within 20% tolerance
-			salesDiff := float64(stats.TotalSales - benchmarkSales)
-			salesTolerance := float64(benchmarkSales) * 0.2
-			if salesDiff < -salesTolerance || salesDiff > salesTolerance {
-				err := fmt.Errorf("total_sales mismatch: API returned %d, benchmark has %d (diff: %.2f, tolerance: ±%.2f)",
-					stats.TotalSales, benchmarkSales, salesDiff, salesTolerance)
+			// Wait 1 second to allow admin page to catch up with latest data
+			time.Sleep(1 * time.Second)
+
+			// Fetch current benchmark values after waiting
+			maxExpectedSales := s.totalSales.Load()
+			maxExpectedRefunds := s.totalRefunds.Load()
+			maxExpectedTickets := s.totalTickets.Load()
+
+			// Validate stats: API values should be >= min expected and <= max expected
+			if stats.TotalSales < minExpectedSales {
+				err := fmt.Errorf("total_sales too old: API returned %d, but minimum expected is %d",
+					stats.TotalSales, minExpectedSales)
+				s.log.Error("Stats validation failed", "error", err.Error(), "user", "admin")
+				s.criticalError <- err
+				return
+			}
+			if stats.TotalSales > maxExpectedSales {
+				err := fmt.Errorf("total_sales too large: API returned %d, but maximum expected is %d",
+					stats.TotalSales, maxExpectedSales)
 				s.log.Error("Stats validation failed", "error", err.Error(), "user", "admin")
 				s.criticalError <- err
 				return
 			}
 
-			// Check if refunds is within 20% tolerance
-			refundsDiff := float64(stats.TotalRefunds - benchmarkRefunds)
-			refundsTolerance := float64(benchmarkRefunds) * 0.2
-			if refundsDiff < -refundsTolerance || refundsDiff > refundsTolerance {
-				err := fmt.Errorf("total_refunds mismatch: API returned %d, benchmark has %d (diff: %.2f, tolerance: ±%.2f)",
-					stats.TotalRefunds, benchmarkRefunds, refundsDiff, refundsTolerance)
+			if stats.TotalRefunds < minExpectedRefunds {
+				err := fmt.Errorf("total_refunds too old: API returned %d, but minimum expected is %d",
+					stats.TotalRefunds, minExpectedRefunds)
+				s.log.Error("Stats validation failed", "error", err.Error(), "user", "admin")
+				s.criticalError <- err
+				return
+			}
+			if stats.TotalRefunds > maxExpectedRefunds {
+				err := fmt.Errorf("total_refunds too large: API returned %d, but maximum expected is %d",
+					stats.TotalRefunds, maxExpectedRefunds)
 				s.log.Error("Stats validation failed", "error", err.Error(), "user", "admin")
 				s.criticalError <- err
 				return
@@ -164,18 +182,22 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 
 			s.log.Info("Stats validation passed", "total_sales", stats.TotalSales, "total_refunds", stats.TotalRefunds, "user", "admin")
 
-			// Validate total tickets sold with 20% tolerance
+			// Validate total tickets sold
 			var totalTicketsSold int64
 			for _, train := range trainSales.Trains {
 				totalTicketsSold += train.TicketsSold
 			}
 
-			benchmarkTickets := s.totalTickets.Load()
-			ticketsDiff := float64(totalTicketsSold - benchmarkTickets)
-			ticketsTolerance := float64(benchmarkTickets) * 0.2
-			if ticketsDiff < -ticketsTolerance || ticketsDiff > ticketsTolerance {
-				err := fmt.Errorf("total_tickets_sold mismatch: API returned %d, benchmark has %d (diff: %.2f, tolerance: ±%.2f)",
-					totalTicketsSold, benchmarkTickets, ticketsDiff, ticketsTolerance)
+			if totalTicketsSold < minExpectedTickets {
+				err := fmt.Errorf("total_tickets_sold too old: API returned %d, but minimum expected is %d",
+					totalTicketsSold, minExpectedTickets)
+				s.log.Error("Tickets validation failed", "error", err.Error(), "user", "admin")
+				s.criticalError <- err
+				return
+			}
+			if totalTicketsSold > maxExpectedTickets {
+				err := fmt.Errorf("total_tickets_sold too large: API returned %d, but maximum expected is %d",
+					totalTicketsSold, maxExpectedTickets)
 				s.log.Error("Tickets validation failed", "error", err.Error(), "user", "admin")
 				s.criticalError <- err
 				return
@@ -185,7 +207,7 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			s.log.Info("Thinking whether to add new trains", "user", "admin")
 
 			// Register more trains based on tickets and sales
-			err = s.registerNewTrains(ctx, agent, benchmarkTickets, benchmarkSales)
+			err = s.registerNewTrains(ctx, agent, maxExpectedTickets, maxExpectedSales)
 
 			if err != nil {
 				s.log.Error("Failed to register trains", "error", err.Error(), "user", "admin")

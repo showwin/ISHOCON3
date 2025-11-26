@@ -1,0 +1,6 @@
+.terraform
+*terraform.tfstate*
+*.py
+*.zip
+*.js
+terraform.tfvars

@@ -1,0 +1,38 @@
+resource "aws_spot_instance_request" "main" {
+  for_each = var.use_spot_instance ? { for idx, team in local.team_list : team => team } : {}
+
+  ami           = var.ami_id
+  instance_type = var.instance_type
+
+  subnet_id                   = module.vpc.public_subnets[0]
+  associate_public_ip_address = true
+
+  vpc_security_group_ids = [
+    aws_security_group.main.id
+  ]
+
+  user_data = <<-EOF
+#!/bin/bash
+mkdir /home/ishocon/.ssh
+${join("\n", [for player_in_team in var.teams[each.value] : "curl https://github.com/${player_in_team}.keys >> /home/ishocon/.ssh/authorized_keys"])}
+${join("\n", [for admin in var.admins : "curl https://github.com/${admin}.keys >> /home/ishocon/.ssh/authorized_keys"])}
+chown -R ishocon:ishocon /home/ishocon/.ssh
+useradd -u 1001 -g 1001 -o -N -d /home/ishocon -s /bin/bash ${each.value}
+echo "export BENCH_TEAM_NAME=${each.value}" >> /home/ishocon/.bashrc
+echo "export BENCH_SCOREBOARD_APIGW_URL=${aws_apigatewayv2_stage.scoreboard.invoke_url}" >> /home/ishocon/.bashrc
+
+EOF
+
+  tags = {
+    Name      = "${var.name} - ${each.key}"
+    team_name = each.key
+    players   = join(",", var.teams[each.key])
+  }
+
+  root_block_device {
+    volume_size = 8
+  }
+
+  user_data_replace_on_change = true
+  wait_for_fulfillment        = true
+}

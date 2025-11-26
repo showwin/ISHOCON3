@@ -114,12 +114,12 @@ func Run(targetURL string, logLevel string) {
 	// 0 => 15
 	// 1000 => 20
 	// 3000 => 25
-	// 10000 => 40
-	// 50000 => 80
-	// 200000 => 150
+	// 10000 => 30
+	// 50000 => 50
+	// 200000 => 100
 	// 500000 => 200
 	// 1000000 => 300
-	phaseWorkerCounts := []int{15, 20, 25, 40, 80, 150, 200, 300}
+	phaseWorkerCounts := []int{15, 20, 25, 30, 50, 100, 200, 300}
 
 	// Calculate total workers needed
 	totalWorkers := phaseWorkerCounts[len(phaseWorkerCounts)-1]
