@@ -1,10 +1,12 @@
 package bench
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -121,13 +123,15 @@ func Run(targetURL string, logLevel string) {
 	// 1000000 => 300
 	phaseWorkerCounts := []int{15, 20, 25, 30, 50, 100, 200, 300}
 
-	// Calculate total workers needed
-	totalWorkers := phaseWorkerCounts[len(phaseWorkerCounts)-1]
+	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
+		// Run the user scenario
+		scenario.RunUserScenario(ctx)
+	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(int32(phaseWorkerCounts[0])))
+	if err != nil {
+		panic(err)
+	}
 
-	// Use atomic counter to assign worker IDs since workerID from isucandar is -1 with InfinityLoop
-	var workerIDCounter atomic.Int32
-
-	// Monitor sales phase changes and log ad campaign launches
+	// Monitor sales phase changes and adjust worker parallelism dynamically
 	go func() {
 		lastPhase := int32(-1)
 		ticker := time.NewTicker(100 * time.Millisecond)
@@ -139,11 +143,15 @@ func Run(targetURL string, logLevel string) {
 				return
 			case <-ticker.C:
 				currentPhase := scenario.currentSalesPhaseIndex.Load()
-				if currentPhase != lastPhase && currentPhase > 0 && int(currentPhase) < len(phaseWorkerCounts) {
+				if currentPhase != lastPhase && currentPhase >= 0 && int(currentPhase) < len(phaseWorkerCounts) {
 					newWorkers := phaseWorkerCounts[currentPhase]
-					oldWorkers := phaseWorkerCounts[currentPhase-1]
 
-					if newWorkers > oldWorkers {
+					// Update worker parallelism
+					worker.SetParallelism(int32(newWorkers))
+
+					// Log ad campaign launch (skip phase 0)
+					if currentPhase > 0 {
+						oldWorkers := phaseWorkerCounts[currentPhase-1]
 						currentTimeStr := getApplicationClock(scenario.initializedAt)
 						slog.Info("New ad campaign launched!",
 							"sales_phase", fmt.Sprintf("%d/%d", currentPhase, len(salesPhases)),
@@ -158,45 +166,6 @@ func Run(targetURL string, logLevel string) {
 			}
 		}
 	}()
-
-	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
-		// Assign a unique ID to this worker goroutine
-		myWorkerID := int(workerIDCounter.Add(1) - 1)
-
-		// Determine which phase this worker belongs to
-		// Workers 0-9 belong to phase 0 (10 workers)
-		// Workers 10-14 belong to phase 1 (15 workers total)
-		// Workers 15-19 belong to phase 2 (20 workers total), etc.
-		workerPhase := len(phaseWorkerCounts) - 1 // Default to last phase
-		for i := 0; i < len(phaseWorkerCounts); i++ {
-			if myWorkerID < phaseWorkerCounts[i] {
-				workerPhase = i
-				break
-			}
-		}
-
-		// Wait until this worker's phase is reached
-		for {
-			currentPhase := scenario.currentSalesPhaseIndex.Load()
-			if currentPhase >= int32(workerPhase) {
-				break
-			}
-
-			// Check if context is cancelled
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(100 * time.Millisecond):
-				// Continue waiting
-			}
-		}
-
-		// Run the user scenario
-		scenario.RunUserScenario(ctx)
-	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(int32(totalWorkers)))
-	if err != nil {
-		panic(err)
-	}
 
 	// Run worker in a goroutine so we can handle critical errors
 	workerDone := make(chan struct{})
@@ -242,6 +211,8 @@ func Run(targetURL string, logLevel string) {
 
 	score := int64((float64(finalSales) + float64(finalPurchased-finalSales)*0.5 - float64(finalRefunds)) / 100)
 
+	time.Sleep(2 * time.Second) // Wait for slog to flush
+
 	slog.Info("Benchmark Finished!",
 		"score", score,
 		"total_sales", finalSales,
@@ -252,4 +223,57 @@ func Run(targetURL string, logLevel string) {
 		"ticket_phase", fmt.Sprintf("%d/%d", finalTicketPhase, len(ticketSoldPhases)),
 		"sales_phase", fmt.Sprintf("%d/%d", finalSalesPhase, len(salesPhases)),
 		"current_time", currentTimeStr)
+	postScore(score)
+}
+
+func postScore(score int64) {
+	apiURL := os.Getenv("BENCH_SCOREBOARD_APIGW_URL")
+	teamName := os.Getenv("BENCH_TEAM_NAME")
+	if apiURL == "" && teamName == "" {
+		return
+	}
+
+	location, err := time.LoadLocation("Asia/Tokyo")
+	if err != nil {
+		slog.Error("Failed to send score")
+		slog.Error("Error loading location.", "error", err.Error())
+		return
+	}
+	now := time.Now().In(location)
+	timestamp := now.Format(time.RFC3339)
+
+	data := map[string]interface{}{
+		"team":      teamName,
+		"score":     score,
+		"timestamp": timestamp,
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		slog.Error("Failed to send score")
+		slog.Error("Error encoding JSON.", "error", err.Error())
+		return
+	}
+
+	// Create the PUT request
+	req, err := http.NewRequest("PUT", apiURL+"teams", bytes.NewBuffer(jsonData))
+	if err != nil {
+		slog.Error("Failed to send score")
+		slog.Error("Error creating request.", "error", err.Error())
+		return
+	}
+
+	// Set headers
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send the request using the http.DefaultClient
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		slog.Error("Failed to send score")
+		slog.Error("Error sending request.", "error", err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	slog.Info("Score sent to scoreboard")
 }
