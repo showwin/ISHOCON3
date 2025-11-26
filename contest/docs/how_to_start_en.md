@@ -6,8 +6,7 @@ SG needs to have 22 and 80 port open, and register your SSH key pair.
 # Connect to EC2 instance
 
 ```
-$ ssh -i <your-key-pair.pem> ubuntu@<your-ec2-public-ip>
-$ sudo su - ishocon
+$ ssh -i <your-GH-registered-key.pem> ishocon@<your-ec2-public-ip>
 ```
 
 # Run WebApp

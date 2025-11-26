@@ -9,6 +9,10 @@ output "scoreboard_url" {
   value = "http://${aws_s3_bucket_website_configuration.scoreboard.website_endpoint}"
 }
 
+output "teams" {
+  value = var.teams
+}
+
 # For commands in Makefile
 
 output "apigateway_url" {

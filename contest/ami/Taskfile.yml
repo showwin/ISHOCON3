@@ -1,0 +1,66 @@
+version: '3'
+
+tasks:
+  package-webapp:
+    desc: Package webapp directory into tar.gz
+    dir: ../..
+    cmds:
+      - tar -zcvf contest/ami/webapp.tar.gz ./webapp
+
+  package-frontend:
+    desc: Package frontend directory into tar.gz
+    dir: ../..
+    cmds:
+      - tar -zcvf contest/ami/frontend.tar.gz ./frontend
+
+  package-benchmark:
+    desc: Package benchmark directory into tar.gz
+    dir: ../..
+    cmds:
+      - tar -zcvf contest/ami/benchmark.tar.gz ./benchmark
+
+  package-payment-app:
+    desc: Package payment_app directory into tar.gz
+    dir: ../..
+    cmds:
+      - tar -zcvf contest/ami/payment_app.tar.gz ./payment_app
+
+  package-all:
+    desc: Package all directories (webapp, frontend, benchmark, payment_app)
+    cmds:
+      - task: package-webapp
+      - task: package-frontend
+      - task: package-benchmark
+      - task: package-payment-app
+
+  init:
+    desc: Initialize Packer
+    cmds:
+      - packer init .
+
+  validate:
+    desc: Validate Packer configuration
+    deps:
+      - package-all
+    cmds:
+      - packer validate -var-file=shared_vars.hcl -var-file=secret_vars.hcl .
+
+  build:
+    desc: Build AMI (takes around 15 minutes)
+    deps:
+      - package-all
+    cmds:
+      - packer build -var-file=shared_vars.hcl -var-file=secret_vars.hcl ami.pkr.hcl
+
+  all:
+    desc: Full AMI build process (package, init, validate, build)
+    cmds:
+      - task: package-all
+      - task: init
+      - task: validate
+      - task: build
+
+  clean:
+    desc: Remove generated tar.gz files
+    cmds:
+      - rm -f webapp.tar.gz frontend.tar.gz benchmark.tar.gz payment_app.tar.gz

@@ -36,7 +36,7 @@ $ ssh -T git@github.com
 ### 3. variables を編集
 
 ```
-$ cp _base.auto.tfvars terraform.tfvars
+$ cp _base.tfvars terraform.tfvars
 ```
 
 - [ ] (必須) `terraform.tfvars` に `admins`と`teams`(チーム名と参加者名)に各々のGitHubアカウントIDを記述
