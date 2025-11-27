@@ -7,7 +7,4 @@ export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 command -v pyenv >/dev/null && eval "$(pyenv init -)"
 
-export ISHOCON_DB_HOST="127.0.0.1"
-export ISHOCON_DB_OPTIONS=""
-export ISHOCON_PAYMENT_HOST="127.0.0.1"
-export ISHOCON_PAYMENT_PORT="8081"
+[ -f "$HOME/env.sh" ] && . "$HOME/env.sh"

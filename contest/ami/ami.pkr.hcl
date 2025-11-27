@@ -123,6 +123,11 @@ build {
     destination = "/tmp/.bashrc"
   }
 
+  provisioner "file" {
+    source      = "./conf/env.sh"
+    destination = "/tmp/env.sh"
+  }
+
   # TODO: Add my.cnf
 
   # WebApp

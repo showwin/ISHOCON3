@@ -3,6 +3,7 @@ set -ex
 
 # Move files
 cp /tmp/.bashrc /home/ishocon/.bashrc
+cp /tmp/env.sh /home/ishocon/env.sh
 cd /home/ishocon
 tar -zxvf /tmp/webapp.tar.gz
 chown -R ishocon:ishocon /home/ishocon/webapp
