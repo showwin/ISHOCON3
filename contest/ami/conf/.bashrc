@@ -7,4 +7,4 @@ export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 command -v pyenv >/dev/null && eval "$(pyenv init -)"
 
-[ -f "$HOME/env.sh" ] && . "$HOME/env.sh"
+[ -f "/home/ishocon/env.sh" ] && . "/home/ishocon/env.sh"

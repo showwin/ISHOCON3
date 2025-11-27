@@ -4,7 +4,7 @@ set -ex
 sudo su - ishocon
 . /home/ishocon/.bashrc
 
-# Build payment_app
+# Unpack frontend files
 cd /tmp/
 tar -zxvf /tmp/frontend.tar.gz
 cd /tmp/frontend

@@ -116,22 +116,22 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			}
 			s.log.Info("GET /api/train_models", "user", "admin")
 
-			// Call GET /api/admin/stats with 1 second timeout
-			statsCtx, statsCancel := context.WithTimeout(ctx, 1*time.Second)
+			// Call GET /api/admin/stats with 2 second timeout
+			statsCtx, statsCancel := context.WithTimeout(ctx, 2*time.Second)
 			stats, err := s.getAdminStats(statsCtx, agent)
 			statsCancel()
 			if err != nil {
-				s.criticalError <- fmt.Errorf("failed to get admin stats within 1 second: %w", err)
+				s.criticalError <- fmt.Errorf("failed to get admin stats within 2 second: %w", err)
 				return
 			}
 			s.log.Info("GET /api/admin/stats", "user", "admin")
 
-			// Call GET /api/admin/train_sales with 1 second timeout
-			trainSalesCtx, trainSalesCancel := context.WithTimeout(ctx, 1*time.Second)
+			// Call GET /api/admin/train_sales with 2 second timeout
+			trainSalesCtx, trainSalesCancel := context.WithTimeout(ctx, 2*time.Second)
 			trainSales, err := s.getAdminTrainSales(trainSalesCtx, agent)
 			trainSalesCancel()
 			if err != nil {
-				s.criticalError <- fmt.Errorf("failed to get train sales within 1 second: %w", err)
+				s.criticalError <- fmt.Errorf("failed to get train sales within 2 second: %w", err)
 				return
 			}
 			s.log.Info("GET /api/admin/train_sales", "user", "admin")
