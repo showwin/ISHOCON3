@@ -2,6 +2,7 @@
 
 require 'English'
 require 'sinatra'
+require 'sinatra/activerecord'
 require 'sinatra/param'
 require 'bcrypt'
 require 'ulid'

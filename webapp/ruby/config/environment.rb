@@ -1,10 +1,5 @@
 # frozen_string_literal: true
 
-require 'sinatra/activerecord'
-
-set :port, 8080
-set :bind, '127.0.0.1'
-
 set :database, {
   adapter: 'mysql2',
   pool: 100,

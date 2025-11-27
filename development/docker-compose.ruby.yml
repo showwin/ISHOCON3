@@ -16,7 +16,6 @@ services:
       db:
         condition: service_healthy
     environment:
-      RACK_ENV: production
       ISHOCON_DB_HOST: db
       ISHOCON_DB_OPTIONS: "--ssl-verify-server-cert=FALSE"
       ISHOCON_PAYMENT_HOST: payment_app
