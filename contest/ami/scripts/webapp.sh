@@ -11,16 +11,15 @@ chown -R ishocon:ishocon /home/ishocon/webapp
 # Load .bashrc
 . /home/ishocon/.bashrc
 
-# # Install Ruby libraries
-# cd /home/ishocon/webapp/ruby
-# gem install bundler -v "2.7.2"
-# bundle install
-
 # # Install Python libraries
 cd /home/ishocon/webapp/python
 sudo apt-get install -y default-mysql-client-core
 pip install uv
 uv sync
+
+# # Install Ruby libraries
+cd /home/ishocon/webapp/ruby
+bundle install
 
 # Install Go libraries
 # ls /home/ishocon

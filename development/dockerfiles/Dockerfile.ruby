@@ -17,4 +17,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD ["bundle", "exec", "rerun", "--", "rackup", "-o", "0.0.0.0", "-p", "8080"]
+CMD ["bundle", "exec", "puma", "-b", "tcp://0.0.0.0:8080"]

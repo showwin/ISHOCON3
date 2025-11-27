@@ -21,7 +21,8 @@ $ uv run gunicorn -c gunicorn.conf.py --bind "0.0.0.0:8080"
 Start Ruby app
 
 ```
-# TODO
+$ cd ~/webapp/ruby
+$ bundle exec puma -b tcp://0.0.0.0:8080
 ```
 
 # Run benchmark
