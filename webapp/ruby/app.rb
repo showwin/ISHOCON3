@@ -50,7 +50,7 @@ post '/api/initialize' do
   end
 
   {
-    initialized_at: Setting.first.initialized_at.utc.strftime('%Y-%m-%dT%H:%M:%S.%3NZ'),
+    initialized_at: Setting.first.initialized_at.utc.strftime('%Y-%m-%dT%H:%M:%S.%6NZ'),
     app_language: 'ruby'
   }.to_json
 end
