@@ -202,7 +202,9 @@ Note that tickets for trains departing by 10:00 will be boarded by ticket purcha
 
 # Railway Company Staff Behavior
 
-Railway company staff check the dashboard every 40 minutes (4 seconds in the real world) to check the number of tickets purchased and the total confirmed sales at that time. If it is confirmed to be favorable, new vehicles will be purchased, and those vehicles and multiple schedules associated with them will be registered. All new vehicles are associated with one of the existing vehicle models, and no vehicles of new vehicle models will be added.
+Railway company staff check the dashboard at minimum every 40 minutes (4 seconds in the real world) to check the number of tickets purchased at that time and the total confirmed sales. If it is confirmed to be favorable, new vehicles will be purchased, and those vehicles and multiple schedules associated with those vehicles will be registered. All new vehicles are associated with one of the existing vehicle models, and no vehicles of new vehicle models will be added.
+
+However, if the application is slow and the series of processes such as vehicle registration take too much time, it will take longer for the railway company staff to take the next action, hindering the maximization of revenue. If the staff's series of actions takes more than 40 minutes, the next sales check will be performed immediately after that.
 
 Also, if sales are favorable, administrators will also strengthen marketing measures, so more ticket purchasers will visit the site.
 

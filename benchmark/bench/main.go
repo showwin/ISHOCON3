@@ -45,18 +45,6 @@ type InitializeResponse struct {
 	AppLanguage   string    `json:"app_language"`
 }
 
-// type BoughtSeat struct {
-//   ScheduleId  string
-//   Seat        string
-//   StationFrom string
-//   StationTo   string
-// }
-
-// type Score struct {
-//   Expense int
-//   Refund  int
-// }
-
 func Run(targetURL string, logLevel string) {
 	rand.New(rand.NewSource(time.Now().UnixNano())) // Seed random number generator
 
@@ -111,29 +99,40 @@ func Run(targetURL string, logLevel string) {
 	// Start admin scenario
 	go scenario.RunAdminScenario(ctx)
 
+	// Define worker counts per ticket phase.
+	// <tickets> => <added workers>
+	// 0 => 5
+	// 5 => +5
+	// 10 => +10
+	// 50 => +20
+	// 100 => +20
+	// 200 => +20
+	ticketPhaseWorkerCounts := []int{5, 10, 20, 20, 20}
+
 	// Define worker counts per sales phase.
-	// <sales> => <total workers>
-	// 0 => 15
-	// 1000 => 20
-	// 3000 => 25
-	// 10000 => 30
-	// 50000 => 50
-	// 200000 => 100
-	// 500000 => 200
-	// 1000000 => 300
-	phaseWorkerCounts := []int{15, 20, 25, 30, 50, 100, 200, 300}
+	// <sales> => <added workers>
+	// 0 => 10
+	// 1000 => +5
+	// 3000 => +5
+	// 10000 => +5
+	// 50000 => +20
+	// 200000 => +50
+	// 500000 => +100
+	// 1000000 => +100
+	salesPhaseWorkerCounts := []int{15, 5, 5, 5, 20, 50, 100, 100}
 
 	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
 		// Run the user scenario
 		scenario.RunUserScenario(ctx)
-	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(int32(phaseWorkerCounts[0])))
+	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(int32(salesPhaseWorkerCounts[0]+ticketPhaseWorkerCounts[0])))
 	if err != nil {
 		panic(err)
 	}
 
-	// Monitor sales phase changes and adjust worker parallelism dynamically
+	// Monitor phase changes and adjust worker parallelism dynamically
 	go func() {
-		lastPhase := int32(-1)
+		lastTicketPhase := int32(0)
+		lastSalesPhase := int32(0)
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 
@@ -142,26 +141,38 @@ func Run(targetURL string, logLevel string) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				currentPhase := scenario.currentSalesPhaseIndex.Load()
-				if currentPhase != lastPhase && currentPhase >= 0 && int(currentPhase) < len(phaseWorkerCounts) {
-					newWorkers := phaseWorkerCounts[currentPhase]
+				currentTicketPhase := scenario.currentTicketPhaseIndex.Load()
+				currentSalesPhase := scenario.currentSalesPhaseIndex.Load()
 
-					// Update worker parallelism
-					worker.SetParallelism(int32(newWorkers))
+				// Handle ticket phase change
+				if currentTicketPhase != lastTicketPhase && currentTicketPhase > 0 && int(currentTicketPhase) < len(ticketPhaseWorkerCounts) {
+					addedWorkers := ticketPhaseWorkerCounts[currentTicketPhase]
+					worker.AddParallelism(int32(addedWorkers))
 
-					// Log ad campaign launch (skip phase 0)
-					if currentPhase > 0 {
-						oldWorkers := phaseWorkerCounts[currentPhase-1]
-						currentTimeStr := getApplicationClock(scenario.initializedAt)
-						slog.Info("New ad campaign launched!",
-							"sales_phase", fmt.Sprintf("%d/%d", currentPhase, len(salesPhases)),
-							"active_buyers", newWorkers,
-							"previous_buyers", oldWorkers,
-							"current_time", currentTimeStr,
-							"user", "admin",
-						)
-					}
-					lastPhase = currentPhase
+					currentTimeStr := getApplicationClock(scenario.initializedAt)
+					log.Info("New ad campaign launched!",
+						"ticket_phase", fmt.Sprintf("%d/%d", currentTicketPhase+1, len(ticketSoldPhases)),
+						"new_buyers", addedWorkers,
+						"current_time", currentTimeStr,
+						"user", "admin",
+					)
+					lastTicketPhase = currentTicketPhase
+				}
+
+				// Handle sales phase change
+				if currentSalesPhase != lastSalesPhase && currentSalesPhase > 0 && int(currentSalesPhase) < len(salesPhaseWorkerCounts) {
+					addedWorkers := salesPhaseWorkerCounts[currentSalesPhase]
+					worker.AddParallelism(int32(addedWorkers))
+
+					// Log ad campaign launch
+					currentTimeStr := getApplicationClock(scenario.initializedAt)
+					log.Info("New ad campaign launched!",
+						"sales_phase", fmt.Sprintf("%d/%d", currentSalesPhase+1, len(salesPhases)),
+						"new_buyers", addedWorkers,
+						"current_time", currentTimeStr,
+						"user", "admin",
+					)
+					lastSalesPhase = currentSalesPhase
 				}
 			}
 		}

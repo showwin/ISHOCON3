@@ -87,8 +87,8 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 		return
 	}
 
-	// Wait until initialization is done
-	time.Sleep(4 * time.Second)
+	// For safer staging after initialization
+	time.Sleep(1 * time.Second)
 
 	s.log.Info("Admin scenario started")
 
@@ -116,6 +116,14 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			}
 			s.log.Info("GET /api/train_models", "user", "admin")
 
+			// Record current benchmark values before waiting
+			minExpectedSales := s.totalSales.Load()
+			minExpectedRefunds := s.totalRefunds.Load()
+			minExpectedTickets := s.totalTickets.Load()
+
+			// Wait 1 second to allow admin page to catch up with latest data
+			time.Sleep(1 * time.Second)
+
 			// Call GET /api/admin/stats with 2 second timeout
 			statsCtx, statsCancel := context.WithTimeout(ctx, 2*time.Second)
 			stats, err := s.getAdminStats(statsCtx, agent)
@@ -136,13 +144,8 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			}
 			s.log.Info("GET /api/admin/train_sales", "user", "admin")
 
-			// Record current benchmark values before waiting
-			minExpectedSales := s.totalSales.Load()
-			minExpectedRefunds := s.totalRefunds.Load()
-			minExpectedTickets := s.totalTickets.Load()
-
-			// Wait 1 second to allow admin page to catch up with latest data
-			time.Sleep(1 * time.Second)
+			// Buffer before validations
+			time.Sleep(200 * time.Millisecond)
 
 			// Fetch current benchmark values after waiting
 			maxExpectedSales := s.totalSales.Load()
