@@ -4,6 +4,7 @@ require 'English'
 require 'sinatra'
 require 'sinatra/activerecord'
 require 'sinatra/param'
+require 'active_support/all'
 require 'bcrypt'
 require 'ulid'
 

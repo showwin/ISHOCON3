@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+Time.zone = 'Tokyo'
+ActiveRecord.default_timezone = :local
+
 set :database, {
   adapter: 'mysql2',
   pool: 100,

@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 environment ENV.fetch('RACK_ENV', 'production')
 
 workers Integer(ENV.fetch('WEB_CONCURRENCY', 4))
