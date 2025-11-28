@@ -264,19 +264,23 @@ post '/api/reserve', user_auth: true do
            else
              'recommend'
            end
-  {
-    status: status,
-    reserved: {
-      reservation_id: reservation.id,
-      schedule_id: reservation.schedule_id,
-      from_station: from_station.name,
-      to_station: to_station.name,
-      departure_at: reservation.departure_at,
-      seats: seats,
-      total_price: total_price,
-      is_discounted: is_discounted
-    }
-  }.to_json
+
+  reservation = {
+    reservation_id: reservation.id,
+    schedule_id: reservation.schedule_id,
+    from_station: from_station.name,
+    to_station: to_station.name,
+    departure_at: reservation.departure_at,
+    seats: seats,
+    total_price: total_price,
+    is_discounted: is_discounted
+  }
+
+  response = { status: status }
+  response[:reserved] = reservation if status == 'success'
+  response[:recommend] = reservation if status == 'recommend'
+
+  response.to_json
 end
 
 post '/api/purchase', user_auth: true do
