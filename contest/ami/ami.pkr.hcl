@@ -141,6 +141,11 @@ build {
     destination = "/tmp/webapp.sh"
   }
 
+  provisioner "file" {
+    source      = "./conf/nginx_default.conf"
+    destination = "/tmp/nginx_default.conf"
+  }
+
   provisioner "shell" {
     inline = [
       "sudo -u ishocon -H sh -c 'bash /tmp/webapp.sh'"
@@ -151,11 +156,6 @@ build {
   provisioner "file" {
     source      = "./frontend.tar.gz"
     destination = "/tmp/frontend.tar.gz"
-  }
-
-  provisioner "file" {
-    source      = "./conf/nginx_frontend.conf"
-    destination = "/tmp/nginx_frontend.conf"
   }
 
   provisioner "file" {

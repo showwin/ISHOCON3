@@ -36,5 +36,6 @@ sudo mysql -u root -pishocon -e 'GRANT ALL ON *.* TO ishocon;'
 sudo ISHOCON_DB_OPTIONS="" sh /home/ishocon/webapp/sql/init.sh
 
 # Nginx
+sudo cp /tmp/nginx_default.conf /etc/nginx/sites-enabled/default
 sudo nginx -t
 sudo service nginx start
