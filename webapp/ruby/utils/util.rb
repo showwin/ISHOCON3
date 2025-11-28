@@ -109,7 +109,7 @@ module Util
       release_lock(schedule_id)
 
       # レコメンド用の空席探し
-      schedule = TrainSchedule.find_by(schedule_id)
+      schedule = TrainSchedule.find(schedule_id)
       next_schedule = TrainSchedule
                       .where('departure_at_station_a_to_b > ?', schedule.departure_at_station_a_to_b)
                       .order(:departure_at_station_a_to_b)
