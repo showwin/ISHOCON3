@@ -102,6 +102,12 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			s.log.Info("Admin scenario finished")
 			return
 		case <-ticker.C:
+			// Record current benchmark values to accept 1 second delay in stats update
+			recordTime := time.Now()
+			minExpectedSales := s.totalSales.Load()
+			minExpectedRefunds := s.totalRefunds.Load()
+			minExpectedTickets := s.totalTickets.Load()
+
 			err := s.adminLogin(ctx, agent)
 			if err != nil {
 				s.criticalError <- fmt.Errorf("failed to login as admin: %w", err)
@@ -116,13 +122,11 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			}
 			s.log.Info("GET /api/train_models", "user", "admin")
 
-			// Record current benchmark values before waiting
-			minExpectedSales := s.totalSales.Load()
-			minExpectedRefunds := s.totalRefunds.Load()
-			minExpectedTickets := s.totalTickets.Load()
-
-			// Wait 1 second to allow admin page to catch up with latest data
-			time.Sleep(1 * time.Second)
+			// Wait until 1 second has passed since recordTime to allow admin page to catch up with latest data
+			elapsed := time.Since(recordTime)
+			if elapsed < 1*time.Second {
+				time.Sleep(1*time.Second - elapsed)
+			}
 
 			// Call GET /api/admin/stats with 2 second timeout
 			statsCtx, statsCancel := context.WithTimeout(ctx, 2*time.Second)
@@ -144,10 +148,6 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			}
 			s.log.Info("GET /api/admin/train_sales", "user", "admin")
 
-			// Buffer before validations
-			time.Sleep(200 * time.Millisecond)
-
-			// Fetch current benchmark values after waiting
 			maxExpectedSales := s.totalSales.Load()
 			maxExpectedRefunds := s.totalRefunds.Load()
 			maxExpectedTickets := s.totalTickets.Load()
@@ -210,7 +210,7 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			s.log.Info("Thinking whether to add new trains", "user", "admin")
 
 			// Register more trains based on tickets and sales
-			err = s.registerNewTrains(ctx, agent, maxExpectedTickets, maxExpectedSales)
+			err = s.registerNewTrains(ctx, agent, totalTicketsSold, stats.TotalSales)
 
 			if err != nil {
 				s.log.Error("Failed to register trains", "error", err.Error(), "user", "admin")

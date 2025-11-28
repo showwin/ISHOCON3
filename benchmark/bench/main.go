@@ -151,7 +151,7 @@ func Run(targetURL string, logLevel string) {
 
 					currentTimeStr := getApplicationClock(scenario.initializedAt)
 					log.Info("New ad campaign launched!",
-						"ticket_phase", fmt.Sprintf("%d/%d", currentTicketPhase+1, len(ticketSoldPhases)),
+						"ticket_phase", fmt.Sprintf("%d/%d", currentTicketPhase, len(ticketSoldPhases)),
 						"new_buyers", addedWorkers,
 						"current_time", currentTimeStr,
 						"user", "admin",
@@ -167,7 +167,7 @@ func Run(targetURL string, logLevel string) {
 					// Log ad campaign launch
 					currentTimeStr := getApplicationClock(scenario.initializedAt)
 					log.Info("New ad campaign launched!",
-						"sales_phase", fmt.Sprintf("%d/%d", currentSalesPhase+1, len(salesPhases)),
+						"sales_phase", fmt.Sprintf("%d/%d", currentSalesPhase, len(salesPhases)),
 						"new_buyers", addedWorkers,
 						"current_time", currentTimeStr,
 						"user", "admin",
