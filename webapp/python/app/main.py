@@ -364,18 +364,22 @@ def post_reserve(
         ).fetchone()
         to_station = Station.model_validate(row)
 
+    status = "success" if reservation.schedule_id == req.schedule_id else "recommend"
+    reservation = ReservationData(
+        reservation_id=reservation.id,
+        schedule_id=reservation.schedule_id,
+        from_station=from_station.name,
+        to_station=to_station.name,
+        departure_at=reservation.departure_at,
+        seats=seats,
+        total_price=total_price,
+        is_discounted=is_discounted
+    )
+
     return PostReserveResponse(
-        status="success" if reservation.schedule_id == req.schedule_id else "recommend",
-        reserved=ReservationData(
-            reservation_id=reservation.id,
-            schedule_id=reservation.schedule_id,
-            from_station=from_station.name,
-            to_station=to_station.name,
-            departure_at=reservation.departure_at,
-            seats=seats,
-            total_price=total_price,
-            is_discounted=is_discounted
-        )
+        status=status,
+        reserved=reservation if status == "success" else None,
+        recommend=reservation if status == "recommend" else None,
     )
 
 
