@@ -20,7 +20,7 @@ register Auth
 
 WAITING_ROOM_CONFIG = {
   max_active_users: 5,
-  polling_interval_ms: 500
+  polling_interval_ms: 5000
 }.freeze
 
 SESSION_CONFIG = {
