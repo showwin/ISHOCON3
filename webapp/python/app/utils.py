@@ -26,8 +26,8 @@ def get_application_clock() -> str:
     setting = Setting.model_validate(row)
 
     time_passed = datetime.now() - setting.initialized_at
-    # この世界では1秒が10分に相当する
-    # 24:00で世界が止まる
+    # JA: この世界では1秒が10分に相当する。24:00で世界が止まる。
+    # EN: In this world, 1 second corresponds to 10 minutes. The world stops at 24:00.
     hours = min(time_passed.seconds // 6, 24)
     minutes = int((time_passed.seconds + (time_passed.microseconds / 1000000)) % 6 * 10) if hours < 24 else 0
     return f"{hours:02d}:{minutes:02d}"
@@ -76,10 +76,13 @@ class SeatRowStatus(BaseModel):
     e: int
 
 def pick_seats(schedule_id: str, from_station_id: str, to_station_id: str, num_people: int) -> tuple[str | None, list[str]]:
-    # 乗車区間を考えるのは大変なので、最初から最後まで全部空いているかどうかだけを考える
+    # JA: 乗車区間を考えるのは大変なので、最初から最後まで全部空いているかどうかだけを考える
     # 本当は乗車区間だけステータスを更新したい…
+    # EN: Considering the boarding section is difficult, so we only consider whether it is completely empty from the beginning to the end.
+    # Ideally, we would like to update the status only for the boarding section...
 
-    # 全区間空いている席が num_people 以上あるかどうかを確認する
+    # JA: 全区間空いている席が num_people 以上あるかどうかを確認する
+    # EN: Check if there are at least num_people seats available for the entire section
     with engine.begin() as conn:
         available_seats = conn.execute(
             text("""
@@ -130,7 +133,8 @@ def pick_seats(schedule_id: str, from_station_id: str, to_station_id: str, num_p
                 seat_row.e = False
                 break
 
-    # 予約状況を反映
+    # JA: 予約状況を反映
+    # EN: Reflect the reservation status
     for seat in reserved_seats:
         seat_row, column = seat.split("-")
         with engine.begin() as conn:
@@ -192,7 +196,8 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
     full_price = BASE_TICKET_PRICE * distance * num_seats
     discounted_price = int(full_price * 0.5)
 
-    # 必要以上に席が違う列に分かれてしまっている場合は割引料金
+    # JA: 必要以上に席が違う列に分かれてしまっている場合は割引料金
+    # EN: If seats are divided into more columns than necessary, a discount applies
     seat_rows = len(set([s.split("-")[0] for s in seats]))
     if seat_rows > allowed_groups:
         print(f"more than allowed groups. {seat_rows} > {allowed_groups} = {num_seats} / {train_seat_columns}. ")
@@ -213,7 +218,8 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
                 continue
             else:
                 print("not next to each other")
-                # 同じ列だが席が隣り合っていない場合は割引料金
+                # JA: 同じ列だが席が隣り合っていない場合は割引料金
+                # EN: If seats are in the same row but not adjacent, a discount applies
                 return discounted_price, True
         previous_seat = seat
 
@@ -245,7 +251,8 @@ def release_seat_reservation(reservation: Reservation) -> None:
         ).fetchall()
         seats = [row[0] for row in rows]
 
-    # 今の実装では乗車区間は気にせずに全区間に対して席を取得しているので、全区間に対して席を解放する
+    # JA: 今の実装では乗車区間は気にせずに全区間に対して席を取得しているので、全区間に対して席を解放する
+    # EN: In the current implementation, seats are acquired for the entire section without considering the boarding section, so seats are released for the entire section
     for seat in seats:
         seat_row, column = seat.split("-")
         with engine.begin() as conn:
