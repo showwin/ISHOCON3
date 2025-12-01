@@ -91,31 +91,10 @@ def pick_seats(schedule_id: str, from_station_id: str, to_station_id: str, num_p
             {"schedule_id": schedule_id}
         ).fetchone()[0]
     if available_seats < num_people:
-        release_lock(schedule_id)
-        # レコメンド用の空席探し
-        with engine.begin() as conn:
-            row = conn.execute(
-                text("""
-                    SELECT * FROM train_schedules WHERE id = :id
-                    """),
-                {"id": schedule_id}
-            ).fetchone()
-            schedule = TrainSchedule.model_validate(row)
-            rows = conn.execute(
-                text("""
-                    SELECT *
-                    FROM train_schedules
-                    WHERE departure_at_station_a_to_b > :departure_at_station_a_to_b
-                    ORDER BY departure_at_station_a_to_b
-                    LIMIT 1
-                    """),
-                {"departure_at_station_a_to_b": schedule.departure_at_station_a_to_b}
-            ).fetchone()
-            if rows is None:
-                return None, []
-            next_schedule = TrainSchedule.model_validate(row)
-            take_lock(next_schedule.id)
-            return pick_seats(next_schedule.id, from_station_id, to_station_id, num_people)
+        # FIXME:
+        # JA: 空席が足りない場合は他のスケジュールをレコメンドしたいが、良いアルゴリズムが思い浮かばないので必要になったら実装する。
+        # EN: When there are not enough available seats, we want to recommend other schedules, but we can't think of a good algorithm, so we will implement it when necessary.
+        return None, []
 
     with engine.begin() as conn:
         rows = conn.execute(

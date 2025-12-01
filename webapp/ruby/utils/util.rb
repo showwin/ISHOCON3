@@ -106,21 +106,10 @@ module Util
     available_seats = ActiveRecord::Base.connection.exec_query(sql).first['total_available_seats'].to_i
 
     if available_seats < num_people
-      release_lock(schedule_id)
-
-      # レコメンド用の空席探し
-      schedule = TrainSchedule.find(schedule_id)
-      next_schedule = TrainSchedule
-                      .where('departure_at_station_a_to_b > ?', schedule.departure_at_station_a_to_b)
-                      .order(:departure_at_station_a_to_b)
-                      .limit(1)
-                      .take
-
-      return [nil, []] if next_schedule.nil?
-
-      take_lock(next_schedule.id)
-
-      return pick_seats(next_schedule.id, from_station_id, to_station_id, num_people)
+      # FIXME:
+      # JA: 空席が足りない場合は他のスケジュールをレコメンドしたいが、良いアルゴリズムが思い浮かばないので必要になったら実装する。
+      # EN: When there are not enough available seats, we want to recommend other schedules, but we can't think of a good algorithm, so we will implement it when necessary.
+      return [nil, []]
     end
 
     seat_rows = SeatRowReservation
