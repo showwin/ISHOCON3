@@ -4,6 +4,8 @@ interface TeamScore {
     timestamp: string;
 }
 
+declare const confetti: any;
+
 const apiUrl = "<<API_GATEWAY_DOMAIN_URL>>teams";
 
 // Function to fetch the latest data
@@ -131,6 +133,78 @@ function renderTimeline(data: TeamScore[]) {
         });
 }
 
+function fireConfetti() {
+    if (typeof confetti !== "function") return;
+
+    const duration = 2000;
+    const animationEnd = Date.now() + duration;
+
+    const defaults = {
+        startVelocity: 45,
+        spread: 360,
+        ticks: 90,
+        zIndex: 9999
+    };
+
+    function randomInRange(min: number, max: number) {
+        return Math.random() * (max - min) + min;
+    }
+
+    const interval = setInterval(function() {
+        const timeLeft = animationEnd - Date.now();
+
+        if (timeLeft <= 0) {
+            return clearInterval(interval);
+        }
+
+        const particleCount = 50 * (timeLeft / duration);
+
+        confetti({
+            ...defaults,
+            particleCount,
+            origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
+        });
+
+        confetti({
+            ...defaults,
+            particleCount,
+            origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
+        });
+
+        confetti({
+            ...defaults,
+            particleCount,
+            origin: { x: 0.5, y: -0.1 }
+        });
+    }, 200);
+}
+
+let partyInterval: number | null = null;
+
+function party() {
+    if (partyInterval !== null) return;
+
+    partyInterval = window.setInterval(() => {
+        fireConfetti();
+    }, 2500);
+}
+
+// Expose the party function globally for manual triggering
+;(window as any).party = party;
+
+function handleTopTeamChange(latestScores: TeamScore[]) {
+    if (!latestScores.length) return;
+
+    const previousTopTeam = localStorage.getItem("previousTopTeam");
+    const currentTopTeam = latestScores[0].team;
+
+    if (previousTopTeam && currentTopTeam !== previousTopTeam) {
+        fireConfetti();
+    }
+
+    localStorage.setItem("previousTopTeam", currentTopTeam);
+}
+
 function renderBarChart(data: TeamScore[]) {
     const margin = { top: 40, right: 30, bottom: 50, left: 100 };
     const width = document.body.clientWidth * 0.8 - margin.left - margin.right;
@@ -145,6 +219,8 @@ function renderBarChart(data: TeamScore[]) {
 
     // Sort the latest scores by score in descending order
     latestScores.sort((a, b) => b.score - a.score);
+
+    handleTopTeamChange(latestScores);
 
     // Create a title for the graph
     d3.select("#bar-chart")
