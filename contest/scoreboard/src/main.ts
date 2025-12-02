@@ -6,12 +6,49 @@ interface TeamScore {
 
 declare const confetti: any;
 
-const apiUrl = "<<API_GATEWAY_DOMAIN_URL>>teams";
+const baseUrl = "<<API_GATEWAY_DOMAIN_URL>>";
+const apiUrl = `${baseUrl}teams`;
+const closedAtApiUrl = `${baseUrl}scoreboard/closed_at`;
+
+const countdownKey = "countdown";
+const partyKey = "party"
+let countdownTimerId: number | null = null;
 
 // Function to fetch the latest data
 async function fetchData() {
     try {
         const response = await fetch(apiUrl);
+
+        // 403 means the scoreboard API is closed, 1hr before the end of the contest
+        if (response.status === 403) {
+            const closedResponse = await fetch(closedAtApiUrl);
+            const closedJson = await closedResponse.json();
+
+            const ts = closedJson.timestamp
+            const closedAtMs = Date.parse(ts + "Z"); // Append 'Z' to indicate UTC
+            localStorage.setItem(countdownKey, String(closedAtMs));
+
+            showFinalCountdown();
+            return [];
+        }
+
+        // Reset countdown state if it existed
+        if (localStorage.getItem(countdownKey)) {
+            localStorage.removeItem(countdownKey);
+        }
+
+        // Clear countdown timer if running
+        if (countdownTimerId !== null) {
+            clearInterval(countdownTimerId);
+            countdownTimerId = null;
+        }
+
+        // Call party when scoreboard re-open
+        if (localStorage.getItem(partyKey)) {
+            party();
+            localStorage.removeItem(partyKey);
+        }
+
         const data = await response.json();
         return data;
     } catch (error) {
@@ -195,14 +232,15 @@ function party() {
 function handleTopTeamChange(latestScores: TeamScore[]) {
     if (!latestScores.length) return;
 
-    const previousTopTeam = localStorage.getItem("previousTopTeam");
+    const previousTopTeamKey = "previousTopTeam";
+    const previousTopTeam = localStorage.getItem(previousTopTeamKey);
     const currentTopTeam = latestScores[0].team;
 
     if (previousTopTeam && currentTopTeam !== previousTopTeam) {
         fireConfetti();
     }
 
-    localStorage.setItem("previousTopTeam", currentTopTeam);
+    localStorage.setItem(previousTopTeamKey, currentTopTeam);
 }
 
 function renderBarChart(data: TeamScore[]) {
@@ -282,9 +320,96 @@ function renderBarChart(data: TeamScore[]) {
         });
 }
 
+function showFinalCountdown() {
+    const DURATION_MS = 60 * 60 * 1000; // 1 hour
+    const LAST_10_MIN_MS = 10 * 60 * 1000;
+
+    const now = Date.now();
+    const stored = localStorage.getItem(countdownKey);
+    const start = stored ? parseInt(stored) || now : now;
+
+    if (!stored) {
+        localStorage.setItem(countdownKey, String(start));
+    }
+
+    // Clear everything and render only countdown
+    const body = d3.select("body");
+    body.selectAll("*").remove();
+
+    body.style("margin", "0")
+        .style("height", "100vh")
+        .style("display", "flex")
+        .style("flex-direction", "column")
+        .style("align-items", "center")
+        .style("justify-content", "center")
+        .style("background-color", "#f4f4f9");
+
+    body.append("h1")
+        .text("Final Countdown")
+        .style("text-align", "center")
+        .style("margin", "0 0 16px 0")
+        .style("font-family", "Segoe UI, Tahoma, Geneva, Verdana, sans-serif");
+
+    const timeEl = body.append("div")
+        .attr("id", "countdown")
+        .style("font-size", "64px")
+        .style("text-align", "center")
+        .style("font-family", "monospace")
+        .style("font-weight", "bold")
+        .style("color", "#111827");
+
+    if (countdownTimerId !== null) {
+        clearInterval(countdownTimerId);
+    }
+
+    const tick = () => {
+        const elapsed = Date.now() - start;
+        const remaining = DURATION_MS - elapsed;
+
+        if (remaining <= 0) {
+            timeEl
+                .text("00:00:00")
+                .style("color", "red");
+
+            // Call party when scoreboard re-open
+            localStorage.setItem(partyKey, "1");
+
+            clearInterval(countdownTimerId!);
+            countdownTimerId = null;
+            return;
+        }
+
+        const totalSeconds = Math.floor(remaining / 1000);
+        const h = Math.floor(totalSeconds / 3600);
+        const m = Math.floor((totalSeconds % 3600) / 60);
+        const s = totalSeconds % 60;
+
+        timeEl.text(
+            `${h.toString().padStart(2, "0")}:` +
+            `${m.toString().padStart(2, "0")}:` +
+            `${s.toString().padStart(2, "0")}`
+        );
+
+        // Turn red in the last 10 minutes
+        if (remaining <= LAST_10_MIN_MS) {
+            timeEl.style("color", "red");
+        } else {
+            timeEl.style("color", "#111827");
+        }
+    };
+
+    tick();
+    countdownTimerId = setInterval(tick, 1000);
+}
+
+
 // Function to update the graph
 function updateGraph() {
     fetchData().then(data => {
+        if (!data || data.length === 0) {
+            return;
+        }
+
         // Clear existing graphs
         d3.select("#timeline-chart").selectAll("*").remove();
         d3.select("#bar-chart").selectAll("*").remove();
