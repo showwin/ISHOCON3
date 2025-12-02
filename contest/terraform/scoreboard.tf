@@ -42,6 +42,7 @@ data "aws_iam_policy_document" "lambda" {
       "dynamodb:GetItem",
       "dynamodb:PutItem",
       "dynamodb:Scan",
+      "dynamodb:Query",
       "dynamodb:UpdateItem",
       "dynamodb:BatchWriteItem",
     ]
@@ -101,7 +102,7 @@ resource "aws_lambda_permission" "apigw_lambda" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.scoreboard.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "arn:aws:execute-api:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.scoreboard.id}/*/*/teams"
+  source_arn    = "arn:aws:execute-api:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:${aws_apigatewayv2_api.scoreboard.id}/*/*/*"
 }
 resource "aws_cloudwatch_log_group" "lambda" {
   name = "/aws/lambda/${aws_lambda_function.scoreboard.function_name}"
@@ -114,7 +115,7 @@ resource "aws_apigatewayv2_api" "scoreboard" {
   protocol_type = "HTTP"
   cors_configuration {
     allow_origins = ["*"]
-    allow_methods = ["GET", "PUT", "DELETE", "OPTIONS"]
+    allow_methods = ["GET", "PUT", "DELETE", "POST", "OPTIONS"]
     allow_headers = ["*"]
   }
 }
@@ -143,6 +144,21 @@ resource "aws_apigatewayv2_route" "scoreboard_teams_delete" {
   route_key = "DELETE /teams"
   target    = "integrations/${aws_apigatewayv2_integration.scoreboard.id}"
 }
+resource "aws_apigatewayv2_route" "scoreboard_scoreboard_closed_at_get" {
+  api_id    = aws_apigatewayv2_api.scoreboard.id
+  route_key = "GET /scoreboard/closed_at"
+  target    = "integrations/${aws_apigatewayv2_integration.scoreboard.id}"
+}
+resource "aws_apigatewayv2_route" "scoreboard_scoreboard_closed_at_post" {
+  api_id    = aws_apigatewayv2_api.scoreboard.id
+  route_key = "POST /scoreboard/closed_at"
+  target    = "integrations/${aws_apigatewayv2_integration.scoreboard.id}"
+}
+resource "aws_apigatewayv2_route" "scoreboard_scoreboard_closed_at_delete" {
+  api_id    = aws_apigatewayv2_api.scoreboard.id
+  route_key = "DELETE /scoreboard/closed_at"
+  target    = "integrations/${aws_apigatewayv2_integration.scoreboard.id}"
+}
 resource "aws_apigatewayv2_deployment" "scoreboard" {
   api_id = aws_apigatewayv2_api.scoreboard.id
   triggers = {
@@ -151,6 +167,9 @@ resource "aws_apigatewayv2_deployment" "scoreboard" {
       jsonencode(aws_apigatewayv2_route.scoreboard_teams_get),
       jsonencode(aws_apigatewayv2_route.scoreboard_teams_put),
       jsonencode(aws_apigatewayv2_route.scoreboard_teams_delete),
+      jsonencode(aws_apigatewayv2_route.scoreboard_scoreboard_closed_at_get),
+      jsonencode(aws_apigatewayv2_route.scoreboard_scoreboard_closed_at_post),
+      jsonencode(aws_apigatewayv2_route.scoreboard_scoreboard_closed_at_delete),
     ])))
   }
   lifecycle {
