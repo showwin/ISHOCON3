@@ -225,6 +225,7 @@ resource "aws_s3_object" "scoreboard_index_html" {
   key          = "index.html"
   source       = "${path.module}/../scoreboard/index.html"
   content_type = "text/html"
+  etag         = md5(file("${path.module}/../scoreboard/index.html"))
 
   depends_on = [
     aws_s3_bucket_policy.scoreboard,
