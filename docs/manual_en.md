@@ -52,6 +52,9 @@ $ cat debug.log | grep "user=user12345"
 $ cat debug.log | grep "user=admin"
 ```
 
+You can also specify the target URL for the benchmark execution using the `--target` option. The default is `http://127.0.0.1:8080`, which accesses the application directly without going through Nginx (described below).
+
+
 ### Benchmark Execution Flow
 
 The load test is executed as follows:
