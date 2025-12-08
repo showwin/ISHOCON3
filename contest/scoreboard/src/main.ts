@@ -2,6 +2,7 @@ interface TeamScore {
     team: string;
     score: number;
     timestamp: string;
+    language?: string;
 }
 
 declare const confetti: any;
@@ -160,8 +161,9 @@ function renderTimeline(data: TeamScore[]) {
         .attr("r", 5)
         .attr("fill", d => colorScale(d.team)!)
         .on("mouseover", function (event, d) {
+            const languageInfo = d.language ? `<br>Lang: ${d.language}` : '';
             tooltip.style("display", "block")
-                .html(`Team: ${d.team}<br>Score: ${d.score}<br>Time: ${timeTooltipFormat(new Date(d.timestamp))}`)
+                .html(`Team: ${d.team}<br>Score: ${d.score}${languageInfo}<br>Time: ${timeTooltipFormat(new Date(d.timestamp))}`)
                 .style("left", (event.pageX + 10) + "px")
                 .style("top", (event.pageY - 20) + "px");
         })
@@ -310,8 +312,9 @@ function renderBarChart(data: TeamScore[]) {
         .attr("height", y.bandwidth())
         .attr("fill", d => colorScale(d.team)!)
         .on("mouseover", function (event, d) {
+            const languageInfo = d.language ? `<br>Lang: ${d.language}` : '';
             tooltip.style("display", "block")
-                .html(`Team: ${d.team}<br>Score: ${d.score}`)
+                .html(`Team: ${d.team}<br>Score: ${d.score}${languageInfo}`)
                 .style("left", (event.pageX + 10) + "px")
                 .style("top", (event.pageY - 20) + "px");
         })

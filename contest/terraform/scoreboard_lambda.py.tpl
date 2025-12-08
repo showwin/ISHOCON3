@@ -36,6 +36,7 @@ def lambda_handler(event, context):
                     "score": float(items["score"]),
                     "team": items["team"],
                     "timestamp": items["timestamp"],
+                    "language": items.get("language", ""),
                 }
                 responseBody.append(responseItems)
             body = responseBody
@@ -46,6 +47,7 @@ def lambda_handler(event, context):
                     "team": requestJSON["team"],
                     "score": Decimal(str(requestJSON["score"])),
                     "timestamp": requestJSON["timestamp"],
+                    "language": requestJSON["language"],
                 }
             )
             body = "Put item " + requestJSON["team"]

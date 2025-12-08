@@ -29,6 +29,7 @@ type NewUserCount struct {
 type Scenario struct {
 	targetURL               string
 	initializedAt           time.Time
+	appLanguage             string
 	log                     logger.Logger
 	totalSales              *atomic.Int64
 	totalRefunds            *atomic.Int64
@@ -82,6 +83,7 @@ func Run(targetURL string, logLevel string) {
 	scenario := Scenario{
 		targetURL:               targetURL,
 		initializedAt:           initResp.InitializedAt,
+		appLanguage:             initResp.AppLanguage,
 		log:                     log,
 		totalSales:              &totalSales,
 		totalRefunds:            &totalRefunds,
@@ -234,10 +236,10 @@ func Run(targetURL string, logLevel string) {
 		"ticket_phase", fmt.Sprintf("%d/%d", finalTicketPhase, len(ticketSoldPhases)),
 		"sales_phase", fmt.Sprintf("%d/%d", finalSalesPhase, len(salesPhases)),
 		"current_time", currentTimeStr)
-	postScore(score)
+	postScore(score, scenario.appLanguage)
 }
 
-func postScore(score int64) {
+func postScore(score int64, appLanguage string) {
 	apiURL := os.Getenv("BENCH_SCOREBOARD_APIGW_URL")
 	teamName := os.Getenv("BENCH_TEAM_NAME")
 	if apiURL == "" && teamName == "" {
@@ -257,6 +259,7 @@ func postScore(score int64) {
 		"team":      teamName,
 		"score":     score,
 		"timestamp": timestamp,
+		"language":  appLanguage,
 	}
 
 	jsonData, err := json.Marshal(data)
