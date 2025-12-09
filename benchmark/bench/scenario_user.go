@@ -253,6 +253,12 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.C
 		return err
 	}
 
+	// Return critical error if there is more than 10 schedules returned
+	if len(schedules.Schedules) > 10 {
+		s.criticalError <- fmt.Errorf("too many schedules returned. Max: 10. Returned: %d", len(schedules.Schedules))
+		return fmt.Errorf("too many schedules returned: %d", len(schedules.Schedules))
+	}
+
 	itinerary := generateRandomItinerary()
 	s.log.Info("Generated itinerary", "stations", itinerary.Stations, "user", user.Name)
 
@@ -267,7 +273,7 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.C
 		// Find the earliest schedule for this leg after currentTime
 		schedule, departureTimeStr, err := findEarliestSchedule(from, to, currentTime, schedules.Schedules)
 		if err != nil {
-			s.log.Warn("No available schedule found", "from", from, "to", to, "currentTime", currentTime, "error", err.Error(), "user", user.Name)
+			s.log.Warn("No available schedule found", "from", from, "to", to, "error", err.Error(), "user", user.Name)
 			return err
 		}
 
@@ -316,13 +322,19 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.C
 			return err
 		}
 		if purchaseResp.Status != "success" {
-			s.log.Warn("Failed to purchase reservation", "reservation_id", reservation.ReservationID, "message", purchaseResp.Message, "user", user.Name)
+			s.log.Info("Failed to purchase reservation", "reservation_id", reservation.ReservationID, "message", purchaseResp.Message, "user", user.Name)
 			s.log.Info("Gave up on buying any more tickets", "user", user.Name)
 			return nil
 		}
 		s.log.Info("Purchase succeeded", "reservation_id", reservation.ReservationID, "user", user.Name)
 		s.totalTickets.Add(int64(len(reservation.Seats)))
 		s.totalPurchased.Add(int64(reservation.TotalPrice))
+
+		// Track purchased seats for duplicate detection
+		for _, seat := range reservation.Seats {
+			key := fmt.Sprintf("%s|%s", reservation.ScheduleID, seat)
+			s.purchasedSeats.Store(key, true)
+		}
 
 		// Start worker to entry (use parent context for cancellation)
 		entryScenarioWorker, err := worker.NewWorker(func(entryCtx context.Context, _ int) {

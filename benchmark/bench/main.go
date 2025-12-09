@@ -41,6 +41,7 @@ type Scenario struct {
 	currentTicketPhaseIndex *atomic.Int32
 	currentSalesPhaseIndex  *atomic.Int32
 	addWorkersFn            func(ticketPhase, salesPhase int32)
+	purchasedSeats          *sync.Map // key: "scheduleId|seat", value: true
 }
 
 type InitializeResponse struct {
@@ -83,6 +84,7 @@ func Run(targetURL string, logLevel string) {
 	var currentSalesPhaseIndex atomic.Int32
 	var refundWg sync.WaitGroup
 	criticalError := make(chan error, 1) // Buffered channel to prevent blocking
+	var purchasedSeats sync.Map
 
 	log := logger.GetLogger(logLevel)
 	scenario := Scenario{
@@ -98,6 +100,7 @@ func Run(targetURL string, logLevel string) {
 		criticalError:           criticalError,
 		currentTicketPhaseIndex: &currentTicketPhaseIndex,
 		currentSalesPhaseIndex:  &currentSalesPhaseIndex,
+		purchasedSeats:          &purchasedSeats,
 	}
 
 	currentTimeStr := getApplicationClock(scenario.initializedAt)
@@ -227,12 +230,27 @@ func Run(targetURL string, logLevel string) {
 
 	time.Sleep(3 * time.Second) // Wait for slog to flush
 
+	// Validate no duplicate seats were purchased
+	totalSeats := int64(0)
+	scenario.purchasedSeats.Range(func(key, value interface{}) bool {
+		totalSeats++
+		return true
+	})
+
+	duplicateSeatsFound := totalSeats != finalTickets
+	if duplicateSeatsFound {
+		slog.Error("Duplicate seat assignments detected!", "total_purchased_seats", finalTickets, "unique_seats", totalSeats)
+		criticalErrorMessage = "Duplicate seat assignments detected"
+		score = 0
+	}
+
 	// Always output final results regardless of log level
 	fmt.Println("\nBenchmark Finished!")
 	if criticalErrorMessage != "" {
 		fmt.Println("  Interrupted due to critical error:")
 		fmt.Printf("  %s\n\n", criticalErrorMessage)
 	}
+
 	fmt.Printf("  Score: %d\n", score)
 	fmt.Printf("  Total Sales: %d\n", finalSales)
 	fmt.Printf("  Total Purchased: %d\n", finalPurchased)
