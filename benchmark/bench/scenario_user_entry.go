@@ -96,7 +96,7 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 			defer s.refundWg.Done()
 			refundCtx, refundCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer refundCancel()
-			err := s.runRefundScenario(refundCtx, user, reservation.ReservationID, reservation.TotalPrice)
+			err := s.runRefundScenario(refundCtx, user, reservation)
 			if err != nil {
 				s.log.Error("Failed to refund", "error", err.Error(), "user", user.Name)
 				// Stop benchmark
@@ -164,7 +164,7 @@ func (s *Scenario) getQRCode(ctx context.Context, qrCodeURL string, user User) (
 	return resp, nil
 }
 
-func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservationID string, totalPrice int) error {
+func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation Reservation) error {
 	agent, err := agent.NewAgent(agent.WithBaseURL(s.targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
 	if err != nil {
 		s.log.Error("Failed to create agent", err.Error())
@@ -197,7 +197,7 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 	}()
 
 	// Request refund
-	refundResp, err := s.requestRefund(ctx, agent, user, reservationID)
+	refundResp, err := s.requestRefund(ctx, agent, user, reservation.ReservationID)
 	if err != nil {
 		s.log.Error("Failed to request refund", err.Error(), "user", user.Name)
 		return err
@@ -206,8 +206,16 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 	// Add refund amount if successful
 	if refundResp.Status == "success" {
 		s.log.Info("Refund request succeeded", "user", user.Name)
-		s.totalRefunds.Add(int64(totalPrice))
-		s.log.Debug("Refund recorded", "amount", totalPrice, "user", user.Name)
+		s.totalRefunds.Add(int64(reservation.TotalPrice))
+		s.log.Debug("Refund recorded", "amount", reservation.TotalPrice, "user", user.Name)
+
+		// Remove refunded seats from purchased seats tracking
+		for _, seat := range reservation.Seats {
+			key := fmt.Sprintf("%s|%s", reservation.ScheduleID, seat)
+			s.purchasedSeats.Delete(key)
+		}
+		// Subtract refunded tickets from total tickets
+		s.totalTickets.Add(-int64(len(reservation.Seats)))
 	} else {
 		return fmt.Errorf("refund request failed with error_code: %s", refundResp.ErrorCode)
 	}
