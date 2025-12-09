@@ -111,8 +111,9 @@
       const name = document.getElementById('name').value;
       const password = document.getElementById('password').value;
 
-      // /api/loginにPOST
-      const res = await fetch('/api/login', {
+      // Use /api/admin/login for admin, /api/login for regular users
+      const loginEndpoint = name === 'admin' ? '/api/admin/login' : '/api/login';
+      const res = await fetch(loginEndpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({name, password})

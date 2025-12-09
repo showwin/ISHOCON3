@@ -424,7 +424,7 @@ get '/api/session', user_auth: true do
   }.to_json
 end
 
-post '/api/login' do
+post '/api/login', '/api/admin/login' do
   param :name,     String, required: true
   param :password, String, required: true
 

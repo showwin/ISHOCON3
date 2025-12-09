@@ -634,6 +634,7 @@ class LoginResponse(BaseModel):
 
 
 @app.post("/api/login")
+@app.post("/api/admin/login")
 def post_login(req: LoginRequest, response: Response) -> LoginResponse:
     with engine.begin() as conn:
         row = conn.execute(
