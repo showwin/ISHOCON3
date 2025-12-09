@@ -4,9 +4,27 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/isucon/isucandar/agent"
 )
+
+// ShouldLogHTTPError returns true if the HTTP error should be logged.
+// Returns false if the context is cancelled (benchmark timeout) to avoid noisy logs.
+func ShouldLogHTTPError(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	// Don't log if context was cancelled (benchmark timeout)
+	if ctx.Err() != nil {
+		return false
+	}
+	// Don't log deadline exceeded errors after timeout
+	if strings.Contains(err.Error(), "context deadline exceeded") && ctx.Err() != nil {
+		return false
+	}
+	return true
+}
 
 type HttpResponse struct {
 	StatusCode int

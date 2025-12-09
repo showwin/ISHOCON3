@@ -149,10 +149,10 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 		resp, err := HttpGet(childCtx, agent, "/api/schedules")
 		if err != nil {
 			// Ignore context canceled errors (user scenario finished)
-			if childCtx.Err() != nil {
-				return
+			if ShouldLogHTTPError(childCtx, err) {
+				s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
 			}
-			s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
+			return
 		}
 		s.log.Debug("GET /api/schedules", "statusCode", resp.StatusCode, "user", user.Name)
 		time.Sleep(1 * time.Second)
@@ -189,7 +189,9 @@ func (s *Scenario) makeReservation(ctx context.Context, agent *agent.Agent, user
 	}
 	resp, err := HttpPost(ctx, agent, "/api/reserve", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("Failed to post /api/reserve", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to post /api/reserve", err.Error(), "user", user.Name)
+		}
 		return nil, err
 	}
 	s.log.Info("POST /api/reserve", "statusCode", resp.StatusCode, "user", user.Name)
@@ -211,7 +213,9 @@ func (s *Scenario) purchaseReservation(ctx context.Context, agent *agent.Agent, 
 	}
 	resp, err := HttpPost(ctx, agent, "/api/purchase", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("Failed to post /api/purchase", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to post /api/purchase", err.Error(), "user", user.Name)
+		}
 		return nil, err
 	}
 	s.log.Info("POST /api/purchase", "statusCode", resp.StatusCode, "user", user.Name)
@@ -239,7 +243,9 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.C
 
 	resp, err := HttpGet(ctx, agent, "/api/schedules")
 	if err != nil {
-		s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
+		}
 	}
 
 	var schedules TrainScheduleResp
@@ -345,7 +351,9 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.C
 		// Update schedules
 		resp, err := HttpGet(ctx, agent, "/api/schedules")
 		if err != nil {
-			s.log.Error("Failed to get /api/schedules", err.Error(), "user", user.Name)
+			if ShouldLogHTTPError(ctx, err) {
+				s.log.Error("Failed to get /api/schedules", err.Error(), "user", user.Name)
+			}
 		}
 
 		if err := json.Unmarshal(resp.Body, &schedules); err != nil {
@@ -359,19 +367,25 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.C
 func (s *Scenario) sendInitRequests(ctx context.Context, agent *agent.Agent, user User) {
 	resp, err := HttpGet(ctx, agent, "/api/purchased_tickets")
 	if err != nil {
-		s.log.Error("Failed to get /api/purchased_tickets", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to get /api/purchased_tickets", err.Error(), "user", user.Name)
+		}
 	}
 	s.log.Info("GET /api/purchased_tickets", "statusCode", resp.StatusCode, "user", user.Name)
 
 	resp, err = HttpGet(ctx, agent, "/api/stations")
 	if err != nil {
-		s.log.Error("Failed to get /api/stations", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to get /api/stations", err.Error(), "user", user.Name)
+		}
 	}
 	s.log.Info("GET /api/stations", "statusCode", resp.StatusCode, "user", user.Name)
 
 	resp, err = HttpGet(ctx, agent, "/api/current_time")
 	if err != nil {
-		s.log.Error("Failed to get /api/current_time", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to get /api/current_time", err.Error(), "user", user.Name)
+		}
 	}
 	s.log.Info("GET /api/current_time", "statusCode", resp.StatusCode, "user", user.Name)
 }
@@ -389,7 +403,9 @@ func (s *Scenario) postLogin(ctx context.Context, agent *agent.Agent, user User)
 	}
 	resp, err := HttpPost(ctx, agent, "/api/login", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("Failed to post /api/login", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to post /api/login", err.Error(), "user", user.Name)
+		}
 		return err
 	}
 	s.log.Info("POST /api/login", "statusCode", resp.StatusCode, "user", user.Name)

@@ -103,12 +103,6 @@ func Run(targetURL string, logLevel string) {
 	currentTimeStr := getApplicationClock(scenario.initializedAt)
 	slog.Info("Benchmark Start!", "current_time", currentTimeStr)
 
-	// Monitor context timeout and log a message
-	go func() {
-		<-ctx.Done()
-		slog.Info("Benchmark timeout reached. Cancelling future HTTP requests...")
-	}()
-
 	// Start admin scenario
 	go scenario.RunAdminScenario(ctx)
 
@@ -208,7 +202,12 @@ func Run(targetURL string, logLevel string) {
 	}
 
 	currentTimeStr = getApplicationClock(scenario.initializedAt)
-	slog.Info("Main phase finished. Waiting for pending refunds to complete...", "current_time", currentTimeStr)
+	finalSales := totalSales.Load()
+	finalPurchased := totalPurchased.Load()
+	finalTickets := totalTickets.Load()
+	finalTicketPhase := currentTicketPhaseIndex.Load()
+	finalSalesPhase := currentSalesPhaseIndex.Load()
+	fmt.Printf("\nMain phase finished. Waiting for pending refunds to complete... (current_time: %s)\n", currentTimeStr)
 
 	// Wait for all refund operations to complete
 	refundWg.Wait()
@@ -223,17 +222,10 @@ func Run(targetURL string, logLevel string) {
 		// No critical error, proceed with final score
 	}
 
-	finalSales := totalSales.Load()
 	finalRefunds := totalRefunds.Load()
-	finalPurchased := totalPurchased.Load()
-	finalTickets := totalTickets.Load()
-	finalTicketPhase := currentTicketPhaseIndex.Load()
-	finalSalesPhase := currentSalesPhaseIndex.Load()
-	currentTimeStr = getApplicationClock(scenario.initializedAt)
-
 	score := int64((float64(finalSales) + float64(finalPurchased-finalSales)*0.5 - float64(finalRefunds)) / 100)
 
-	time.Sleep(10 * time.Second) // Wait for slog to flush
+	time.Sleep(3 * time.Second) // Wait for slog to flush
 
 	// Always output final results regardless of log level
 	fmt.Println("\nBenchmark Finished!")

@@ -46,13 +46,22 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	waitTime := max(departureTime.Add(-1*time.Hour).Sub(currentTime), 0)
 	s.log.Info("Thinking about whether to enter", "departureAt", departureAt, "current_time", currentTimeStr, "entryToken", entryToken, "user", user.Name)
 
+	var sleepDuration time.Duration
 	if waitTime > 0 {
-		waitTimeInApp := waitTime / 600 // 1 second in app time is 10 minutes in real time
-		s.log.Info("Waiting until 1 hour before departure", "wait_time", waitTime.String(), "wait_time_in_app", waitTimeInApp.String(), "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
-		time.Sleep(waitTimeInApp)
+		sleepDuration = waitTime / 600 // 1 second in app time is 10 minutes in real time
+		s.log.Info("Waiting until 1 hour before departure", "wait_time", waitTime.String(), "wait_time_in_app", sleepDuration.String(), "departure_time", departureAt, "current_time", currentTimeStr, "user", user.Name)
 	} else {
 		// Moving to the gate takes 10 minutes in real time (1 second in app time)
-		time.Sleep(1 * time.Second)
+		sleepDuration = 1 * time.Second
+	}
+
+	// Context-aware sleep that can be interrupted
+	select {
+	case <-time.After(sleepDuration):
+		// Sleep completed normally
+	case <-ctx.Done():
+		// Context cancelled (benchmark timeout)
+		return ctx.Err()
 	}
 
 	currentTimeStr = getApplicationClock(s.initializedAt)
@@ -61,7 +70,9 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	// Get QR code before entering the gate
 	qrResp, err := s.getQRCode(ctx, qrCodeURL, user)
 	if err != nil {
-		s.log.Error("Failed to get QR code", "error", err.Error(), "qrCodeURL", qrCodeURL, "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to get QR code", "error", err.Error(), "qrCodeURL", qrCodeURL, "user", user.Name)
+		}
 	} else {
 		s.log.Info("GET QR code", "statusCode", qrResp.StatusCode, "qrCodeURL", qrCodeURL, "user", user.Name)
 	}
@@ -69,7 +80,9 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	// Enter the ticket gate
 	resp, err := s.enterGate(ctx, EntryReq{EntryToken: entryToken}, user)
 	if err != nil {
-		s.log.Error("Failed to enter", "error", err.Error(), "token", entryToken)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to enter", "error", err.Error(), "token", entryToken)
+		}
 		return err
 	}
 	currentTimeStr = getApplicationClock(s.initializedAt)
@@ -113,7 +126,9 @@ func (s *Scenario) enterGate(ctx context.Context, req EntryReq, user User) (*Ent
 	}
 	resp, err := HttpPost(ctx, agent, "/api/entry", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("Failed to post /api/entry", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to post /api/entry", "error", err.Error(), "token", req.EntryToken, "user", user.Name)
+		}
 		return nil, err
 	}
 	s.log.Info("POST /api/entry", "statusCode", resp.StatusCode, "token", req.EntryToken, "user", user.Name)
@@ -140,7 +155,9 @@ func (s *Scenario) getQRCode(ctx context.Context, qrCodeURL string, user User) (
 
 	resp, err := HttpGet(ctx, agent, qrCodeURL)
 	if err != nil {
-		s.log.Error("Failed to get QR code", "error", err.Error(), "qrCodeURL", qrCodeURL, "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to get QR code", "error", err.Error(), "qrCodeURL", qrCodeURL, "user", user.Name)
+		}
 		return HttpResponse{}, err
 	}
 
@@ -164,7 +181,10 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 	scheduleWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
 		resp, err := HttpGet(childCtx, agent, "/api/schedules")
 		if err != nil {
-			s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
+			if ShouldLogHTTPError(childCtx, err) {
+				s.log.Error("Failed to get /api/schedules", "error", err.Error(), "user", user.Name)
+			}
+			return
 		}
 		s.log.Debug("GET /api/schedules", "statusCode", resp.StatusCode, "user", user.Name)
 		time.Sleep(1 * time.Second)
@@ -207,7 +227,9 @@ func (s *Scenario) requestRefund(ctx context.Context, agent *agent.Agent, user U
 	}
 	resp, err := HttpPost(ctx, agent, "/api/refund", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		s.log.Error("Failed to post /api/refund", "error", err.Error(), "user", user.Name)
+		if ShouldLogHTTPError(ctx, err) {
+			s.log.Error("Failed to post /api/refund", "error", err.Error(), "user", user.Name)
+		}
 		return nil, err
 	}
 	s.log.Info("POST /api/refund", "statusCode", resp.StatusCode, "user", user.Name)
