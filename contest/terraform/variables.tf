@@ -33,7 +33,7 @@ variable "name" {
 variable "ami_id" {
   description = "AMI ID for the ISHOCON EC2 instances"
   type        = string
-  default     = "ami-012280da4467ae3d2"
+  default     = "ami-0f3c984c549fa79ea"
 }
 
 variable "instance_type" {
