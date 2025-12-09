@@ -424,7 +424,7 @@ get '/api/session', user_auth: true do
   }.to_json
 end
 
-post '/api/login', '/api/admin/login' do
+def handle_login
   param :name,     String, required: true
   param :password, String, required: true
 
@@ -452,6 +452,14 @@ post '/api/login', '/api/admin/login' do
       is_admin: user.is_admin
     }
   }.to_json
+end
+
+post '/api/login' do
+  handle_login
+end
+
+post '/api/admin/login' do
+  handle_login
 end
 
 post '/api/logout' do
