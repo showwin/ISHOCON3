@@ -39,6 +39,7 @@ type Scenario struct {
 	criticalError           chan error
 	currentTicketPhaseIndex *atomic.Int32
 	currentSalesPhaseIndex  *atomic.Int32
+	addWorkersFn            func(ticketPhase, salesPhase int32)
 }
 
 type InitializeResponse struct {
@@ -131,54 +132,51 @@ func Run(targetURL string, logLevel string) {
 		panic(err)
 	}
 
-	// Monitor phase changes and adjust worker parallelism dynamically
-	go func() {
-		lastTicketPhase := int32(0)
-		lastSalesPhase := int32(0)
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
+	// Define the function to add workers synchronously
+	var lastTicketPhase atomic.Int32
+	var lastSalesPhase atomic.Int32
 
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				currentTicketPhase := scenario.currentTicketPhaseIndex.Load()
-				currentSalesPhase := scenario.currentSalesPhaseIndex.Load()
+	addWorkersFn := func(newTicketPhase, newSalesPhase int32) {
+		oldTicketPhase := lastTicketPhase.Load()
+		oldSalesPhase := lastSalesPhase.Load()
 
-				// Handle ticket phase change
-				if currentTicketPhase != lastTicketPhase && currentTicketPhase > 0 && int(currentTicketPhase) < len(ticketPhaseWorkerCounts) {
-					addedWorkers := ticketPhaseWorkerCounts[currentTicketPhase]
-					worker.AddParallelism(int32(addedWorkers))
+		// Handle ticket phase change
+		if newTicketPhase > oldTicketPhase {
+			for phase := oldTicketPhase + 1; phase <= newTicketPhase; phase++ {
+				addedWorkers := ticketPhaseWorkerCounts[phase]
+				worker.AddParallelism(int32(addedWorkers))
 
-					currentTimeStr := getApplicationClock(scenario.initializedAt)
-					log.Info("New ad campaign launched!",
-						"ticket_phase", fmt.Sprintf("%d/%d", currentTicketPhase, len(ticketSoldPhases)),
-						"new_buyers", addedWorkers,
-						"current_time", currentTimeStr,
-						"user", "admin",
-					)
-					lastTicketPhase = currentTicketPhase
-				}
-
-				// Handle sales phase change
-				if currentSalesPhase != lastSalesPhase && currentSalesPhase > 0 && int(currentSalesPhase) < len(salesPhaseWorkerCounts) {
-					addedWorkers := salesPhaseWorkerCounts[currentSalesPhase]
-					worker.AddParallelism(int32(addedWorkers))
-
-					// Log ad campaign launch
-					currentTimeStr := getApplicationClock(scenario.initializedAt)
-					log.Info("New ad campaign launched!",
-						"sales_phase", fmt.Sprintf("%d/%d", currentSalesPhase, len(salesPhases)),
-						"new_buyers", addedWorkers,
-						"current_time", currentTimeStr,
-						"user", "admin",
-					)
-					lastSalesPhase = currentSalesPhase
-				}
+				currentTimeStr := getApplicationClock(scenario.initializedAt)
+				log.Info("New ad campaign launched!",
+					"ticket_phase", fmt.Sprintf("%d/%d", phase, len(ticketSoldPhases)),
+					"new_buyers", addedWorkers,
+					"current_time", currentTimeStr,
+					"user", "admin",
+				)
+				time.Sleep(400 * time.Millisecond)
 			}
+			lastTicketPhase.Store(newTicketPhase)
 		}
-	}()
+
+		// Handle sales phase change
+		if newSalesPhase > oldSalesPhase {
+			for phase := oldSalesPhase + 1; phase <= newSalesPhase; phase++ {
+				addedWorkers := salesPhaseWorkerCounts[phase]
+				worker.AddParallelism(int32(addedWorkers))
+				currentTimeStr := getApplicationClock(scenario.initializedAt)
+				log.Info("New ad campaign launched!",
+					"sales_phase", fmt.Sprintf("%d/%d", phase, len(salesPhases)),
+					"new_buyers", addedWorkers,
+					"current_time", currentTimeStr,
+					"user", "admin",
+				)
+				time.Sleep(400 * time.Millisecond)
+			}
+			lastSalesPhase.Store(newSalesPhase)
+		}
+	}
+
+	scenario.addWorkersFn = addWorkersFn
 
 	// Run worker in a goroutine so we can handle critical errors
 	workerDone := make(chan struct{})
@@ -188,12 +186,14 @@ func Run(targetURL string, logLevel string) {
 	}()
 
 	// Wait for either worker completion or critical error
+	var criticalErrorMessage string
 	select {
 	case <-workerDone:
 		// Normal completion
 	case critErr := <-criticalError:
 		// Critical error occurred, cancel context and stop benchmark
-		slog.Error("Critical error occurred, stopping benchmark", "error", critErr.Error())
+		criticalErrorMessage = critErr.Error()
+		slog.Error("Critical error occurred, stopping benchmark", "error", criticalErrorMessage)
 		cancel()
 		// Wait a bit for goroutines to clean up
 		<-workerDone
@@ -208,7 +208,8 @@ func Run(targetURL string, logLevel string) {
 	// Check if there was a critical error during refund phase
 	select {
 	case critErr := <-criticalError:
-		slog.Error("Critical error occurred, stopping benchmark", "error", critErr.Error())
+		criticalErrorMessage = critErr.Error()
+		slog.Error("Critical error occurred, stopping benchmark", "error", criticalErrorMessage)
 		panic(critErr)
 	default:
 		// No critical error, proceed with final score
@@ -224,18 +225,24 @@ func Run(targetURL string, logLevel string) {
 
 	score := int64((float64(finalSales) + float64(finalPurchased-finalSales)*0.5 - float64(finalRefunds)) / 100)
 
-	time.Sleep(2 * time.Second) // Wait for slog to flush
+	time.Sleep(3 * time.Second) // Wait for slog to flush
 
-	slog.Info("Benchmark Finished!",
-		"score", score,
-		"total_sales", finalSales,
-		"total_purchased", finalPurchased,
-		"total_refunds", finalRefunds,
-		"net_revenue", finalSales-finalRefunds,
-		"total_tickets", finalTickets,
-		"ticket_phase", fmt.Sprintf("%d/%d", finalTicketPhase, len(ticketSoldPhases)),
-		"sales_phase", fmt.Sprintf("%d/%d", finalSalesPhase, len(salesPhases)),
-		"current_time", currentTimeStr)
+	// Always output final results regardless of log level
+	fmt.Println("\nBenchmark Finished!")
+	if criticalErrorMessage != "" {
+		fmt.Println("  Interrupted due to critical error:")
+		fmt.Printf("  %s\n\n", criticalErrorMessage)
+	}
+	fmt.Printf("  Score: %d\n", score)
+	fmt.Printf("  Total Sales: %d\n", finalSales)
+	fmt.Printf("  Total Purchased: %d\n", finalPurchased)
+	fmt.Printf("  Total Refunds: %d\n", finalRefunds)
+	fmt.Printf("  Net Revenue: %d\n", finalSales-finalRefunds)
+	fmt.Printf("  Total Tickets: %d\n", finalTickets)
+	fmt.Printf("  Ticket Phase: %d/%d\n", finalTicketPhase, len(ticketSoldPhases))
+	fmt.Printf("  Sales Phase: %d/%d\n", finalSalesPhase, len(salesPhases))
+	fmt.Printf("  Current Time: %s\n\n", currentTimeStr)
+
 	postScore(score, scenario.appLanguage)
 }
 

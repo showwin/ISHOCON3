@@ -248,11 +248,10 @@ func (s *Scenario) registerNewTrains(ctx context.Context, agent *agent.Agent, cu
 			if err != nil {
 				return fmt.Errorf("failed to register trains for ticket phase %d: %w", i, err)
 			}
-
-			// Move to next phase
 			s.currentTicketPhaseIndex.Store(int32(i + 1))
 		} else {
 			s.log.Info("Not enough tickets sold for the next phase", "current_phase", i, "user", "admin")
+			currentTicketPhase = i
 			break
 		}
 	}
@@ -283,12 +282,17 @@ func (s *Scenario) registerNewTrains(ctx context.Context, agent *agent.Agent, cu
 				return fmt.Errorf("failed to register trains for sales phase %d: %w", i, err)
 			}
 
-			// Move to next phase
 			s.currentSalesPhaseIndex.Store(int32(i + 1))
 		} else {
 			s.log.Info("Not enough sales for the next phase", "current_phase", i, "user", "admin")
+			currentSalesPhase = i
 			break
 		}
+	}
+
+	// Add workers based on phases synchronously
+	if s.addWorkersFn != nil {
+		s.addWorkersFn(int32(currentTicketPhase), int32(currentSalesPhase))
 	}
 
 	return nil
