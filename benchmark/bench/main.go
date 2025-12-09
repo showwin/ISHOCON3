@@ -237,8 +237,8 @@ func Run(targetURL string, logLevel string) {
 		return true
 	})
 
-	duplicateSeatsFound := totalSeats != finalTickets
-	if duplicateSeatsFound {
+	duplicateSeatsFound := totalSeats < finalTickets
+	if criticalErrorMessage == "" && duplicateSeatsFound {
 		slog.Error("Duplicate seat assignments detected!", "total_purchased_seats", finalTickets, "unique_seats", totalSeats)
 		criticalErrorMessage = "Duplicate seat assignments detected"
 		score = 0
