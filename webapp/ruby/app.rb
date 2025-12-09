@@ -7,6 +7,7 @@ require 'sinatra/param'
 require 'active_support/all'
 require 'bcrypt'
 require 'ulid'
+require 'redis'
 
 require_relative 'config/environment'
 require_relative 'middlewares/auth'
@@ -18,13 +19,18 @@ Dir[File.join(__dir__, 'models', '*.rb')].sort.each { |f| require f }
 helpers Sinatra::Param
 register Auth
 
+# Redis connection for seat management
+REDIS_HOST = ENV.fetch('ISHOCON_REDIS_HOST', 'localhost')
+REDIS_PORT = ENV.fetch('ISHOCON_REDIS_PORT', '6379').to_i
+REDIS = Redis.new(host: REDIS_HOST, port: REDIS_PORT, db: 0)
+
 WAITING_ROOM_CONFIG = {
-  max_active_users: 5,
-  polling_interval_ms: 5000
+  max_active_users: 150,
+  polling_interval_ms: 1000
 }.freeze
 
 SESSION_CONFIG = {
-  idle_timeout_sec: 10,
+  idle_timeout_sec: 7,
   polling_interval_ms: 500
 }.freeze
 
@@ -50,6 +56,12 @@ post '/api/initialize' do
     Setting.create!
   end
 
+  # Initialize Redis with available seats for all schedules
+  REDIS.flushdb
+  TrainSchedule.find_each do |schedule|
+    Util.initialize_schedule_seats(REDIS, schedule)
+  end
+
   {
     initialized_at: Setting.first.initialized_at.utc.strftime('%Y-%m-%dT%H:%M:%S.%6NZ'),
     app_language: 'ruby'
@@ -68,64 +80,79 @@ get '/api/schedules' do
   current_time = Util.application_clock
   current_hour, current_minute = current_time.split(':').map(&:to_i)
 
-  # JA: アプリケーションが遅いので予約から入場までのタイムラグを考慮して、2時間後以降のスケジュールを返却している。
-  # 本当はもっと直近のスケジュールを返して、できるだけ早い時間帯に乗車してもらいたい
-  # EN: The application is slow, so we are returning schedules from 2 hours later, taking into account the time lag from reservation to entry.
-  # We really want to return earlier schedules and have users board as soon as possible.
+  # Use multiple smart queries for better train distribution
   two_hours_later = format('%02d:%02d', current_hour + 2, current_minute)
+  six_hours_later = format('%02d:%02d', (current_hour + 6) % 24, current_minute)
+  twelve_hours_later = format('%02d:%02d', (current_hour + 12) % 24, current_minute)
 
-  schedules = TrainSchedule
-              .where('departure_at_station_a_to_b >= ?', two_hours_later)
-              .order(:departure_at_station_a_to_b)
-              .limit(10)
+  # Query 1: First available train (within 2 hours)
+  query1 = TrainSchedule
+           .where('departure_at_station_a_to_b >= ?', two_hours_later)
+           .where.not('id LIKE ?', 'L2%')
+           .order(:departure_at_station_a_to_b)
+           .limit(4)
+
+  # Query 2: Trains departing 6+ hours later
+  query2 = TrainSchedule
+           .where('departure_at_station_a_to_b >= ?', six_hours_later)
+           .where.not('id LIKE ?', 'L2%')
+           .order(:departure_at_station_a_to_b)
+           .limit(2)
+
+  # Query 3: Trains departing 12+ hours later
+  query3 = TrainSchedule
+           .where('departure_at_station_a_to_b >= ?', twelve_hours_later)
+           .where.not('id LIKE ?', 'L2%')
+           .order(:departure_at_station_a_to_b)
+           .limit(2)
+
+  # Query 4: Evening trains (18:00-23:59)
+  query4 = TrainSchedule
+           .where('departure_at_station_a_to_b > ? AND departure_at_station_a_to_b < ?', '19:00', '22:00')
+           .where.not('id LIKE ?', 'L2%')
+           .order("rand()")
+           .limit(1)
+
+  # Query 5: Return trains (Edge->Dock departures, which are opposite direction)
+  query5 = TrainSchedule
+           .where('departure_at_station_b_to_a > ?', '22:00')
+           .where.not('id LIKE ?', 'L2%')
+           .order("rand()")
+           .limit(1)
+
+  # Combine all results and remove duplicates
+  all_schedules = (query1.to_a + query2.to_a + query3.to_a + query4.to_a + query5.to_a).uniq(&:id).take(10)
 
   trains = []
-  schedules.each do |schedule|
+  all_schedules.each do |schedule|
     train = Train.find(schedule.train_id)
 
-    available_seats_between_stations = {
-      'A->B' => '',
-      'B->C' => '',
-      'C->D' => '',
-      'D->E' => '',
-      'E->D' => '',
-      'D->C' => '',
-      'C->B' => '',
-      'B->A' => ''
-    }
+    # Get available seats from Redis
+    redis_key = "schedule:#{schedule.id}:available_seats"
+    available_seats = REDIS.llen(redis_key)
 
-    available_seats_between_stations.each_key do |stations|
-      available_seats = SeatRowReservation
-                        .where(
-                          schedule_id: schedule.id,
-                          from_station_id: stations.split('->')[0],
-                          to_station_id: stations.split('->')[1]
-                        )
-                        .select('SUM(a_is_available) + SUM(b_is_available) + SUM(c_is_available) + SUM(d_is_available) + SUM(e_is_available) AS available_seats')
-                        .take
-                        .available_seats.to_i
+    # Get total seats for this train
+    total_seats = Train
+                  .joins('INNER JOIN train_models ON trains.model = train_models.name')
+                  .where(id: train.id)
+                  .select('train_models.seat_rows * train_models.seat_columns AS total_seats')
+                  .take
+                  .total_seats.to_i
 
-      total_seats = Train
-                    .joins('INNER JOIN train_models ON trains.model = train_models.name')
-                    .where(id: train.id)
-                    .select('train_models.seat_rows * train_models.seat_columns AS total_seats')
-                    .take
-                    .total_seats.to_i
-
-      available_seats_between_stations[stations] = Util.available_seat_sign(available_seats, total_seats)
-    end
+    # Use the same availability sign for all station pairs
+    availability_sign = Util.available_seat_sign(available_seats, total_seats)
 
     trains << {
       'id' => schedule.id,
       'availability' => {
-        'Arena->Bridge' => available_seats_between_stations['A->B'],
-        'Bridge->Cave' => available_seats_between_stations['B->C'],
-        'Cave->Dock' => available_seats_between_stations['C->D'],
-        'Dock->Edge' => available_seats_between_stations['D->E'],
-        'Edge->Dock' => available_seats_between_stations['E->D'],
-        'Dock->Cave' => available_seats_between_stations['D->C'],
-        'Cave->Bridge' => available_seats_between_stations['C->B'],
-        'Bridge->Arena' => available_seats_between_stations['B->A']
+        'Arena->Bridge' => availability_sign,
+        'Bridge->Cave' => availability_sign,
+        'Cave->Dock' => availability_sign,
+        'Dock->Edge' => availability_sign,
+        'Edge->Dock' => availability_sign,
+        'Dock->Cave' => availability_sign,
+        'Cave->Bridge' => availability_sign,
+        'Bridge->Arena' => availability_sign
       },
       'departure_at' => {
         'Arena->Bridge' => schedule.departure_at_station_a_to_b,
@@ -202,14 +229,9 @@ post '/api/reserve', user_auth: true do
 
   Util.update_last_activity_at(@current_user.id)
 
-  unless Util.take_lock(params[:schedule_id])
-    return {
-      status: 'fail',
-      error_code: 'LOCK_TIMEOUT'
-    }.to_json
-  end
-
+  # Use Redis-based atomic seat picking (no locks needed)
   reserved_schedule_id, seats = Util.pick_seats(
+    REDIS,
     params[:schedule_id],
     params[:from_station_id],
     params[:to_station_id],
@@ -284,13 +306,6 @@ post '/api/reserve', user_auth: true do
 end
 
 post '/api/purchase', user_auth: true do
-  # FIXME:
-  # JA: レコメンドした場合は20%の確率でチケットが購入されないので、その場合このエンドポイントが呼ばれず、予約のロックが残ってしまう。
-  # ただ、それが発生するケースは少ないと信じて一旦放置
-  # EN: If recommended, there is a 20% chance the ticket will not be purchased.
-  # In that case, this endpoint will not be called, leaving the reservation locked.
-  # However, we believe this case is rare and are leaving it as is for now.
-
   param :reservation_id, String, required: true
 
   Util.update_last_activity_at(@current_user.id)
@@ -309,10 +324,9 @@ post '/api/purchase', user_auth: true do
   if payment_status == 'success'
     payment.update(is_captured: true)
   else
-    Util.release_seat_reservation(reservation)
+    # Return seats to Redis on payment failure
+    Util.release_seat_reservation(REDIS, reservation)
   end
-
-  Util.release_lock(reservation.schedule_id)
 
   qr_image = Util.generate_qr_image(reservation.entry_token)
   image_id = ULID.generate
@@ -392,7 +406,8 @@ post '/api/refund', user_auth: true do
 
   payment.update(is_captured: false, is_refunded: true)
 
-  Util.release_seat_reservation(reservation) if reservation.departure_at > Util.application_clock
+  # Return seats to Redis if train hasn't departed yet
+  Util.release_seat_reservation(REDIS, reservation) if reservation.departure_at > Util.application_clock
 
   { status: 'success' }.to_json
 end
@@ -576,26 +591,7 @@ post '/api/admin/add_train', admin_auth: true do
   schedules = TrainSchedule.where(train_id: train.id)
 
   schedules.each do |schedule|
-    train = Train.find(schedule.train_id)
-    train_model = TrainModel.find_by(name: train.model)
-
-    (0...train_model.seat_rows).each do |i|
-      stations_list = [%w[A B], %w[B C], %w[C D], %w[D E], %w[E D], %w[D C], %w[C B], %w[B A]]
-      stations_list.each do |from_station, to_station|
-        SeatRowReservation.create!(
-          train_id: schedule.train_id,
-          schedule_id: schedule.id,
-          from_station_id: from_station,
-          to_station_id: to_station,
-          seat_row: i + 1,
-          a_is_available: train_model.seat_columns >= 1 ? 1 : 0,
-          b_is_available: train_model.seat_columns >= 2 ? 1 : 0,
-          c_is_available: train_model.seat_columns >= 3 ? 1 : 0,
-          d_is_available: train_model.seat_columns >= 4 ? 1 : 0,
-          e_is_available: train_model.seat_columns >= 5 ? 1 : 0
-        )
-      end
-    end
+    Util.initialize_schedule_seats(REDIS, schedule)
   end
 
   { status: 'success' }.to_json

@@ -28,6 +28,78 @@ module Util
     NONE = 'none'
   end
 
+  # Initialize Redis list with all available seats for a schedule
+  def initialize_schedule_seats(redis_client, schedule)
+    train = Train.find(schedule.train_id)
+    model = TrainModel.find_by(name: train.model)
+    return unless model
+
+    seat_columns_list = %w[A B C D E]
+    available_seats = []
+
+    (1..model.seat_rows).each do |row_num|
+      (0...model.seat_columns).each do |col_num|
+        seat = "#{row_num}-#{seat_columns_list[col_num]}"
+        available_seats << seat
+      end
+    end
+
+    return if available_seats.empty?
+
+    redis_key = "schedule:#{schedule.id}:available_seats"
+    redis_client.rpush(redis_key, available_seats)
+  end
+
+  # Pick seats atomically from Redis
+  def pick_seats(redis_client, schedule_id, from_station_id, to_station_id, num_people)
+    redis_key = "schedule:#{schedule_id}:available_seats"
+
+    # Atomically pop num_people seats from the list
+    reserved_seats = redis_client.lpop(redis_key, num_people)
+
+    reserved_seats = [] if reserved_seats.nil?
+    reserved_seats = [reserved_seats] unless reserved_seats.is_a?(Array)
+
+    if reserved_seats.length < num_people
+      # Not enough seats, return what we popped back to the list
+      redis_client.lpush(redis_key, reserved_seats) unless reserved_seats.empty?
+
+      # Try to find next available schedule (recommendation)
+      schedule = TrainSchedule.find_by(id: schedule_id)
+      return [nil, []] unless schedule
+
+      next_schedule = TrainSchedule
+                      .where('departure_at_station_a_to_b > ?', schedule.departure_at_station_a_to_b)
+                      .order(:departure_at_station_a_to_b)
+                      .first
+
+      return [nil, []] unless next_schedule
+
+      return pick_seats(redis_client, next_schedule.id, from_station_id, to_station_id, num_people)
+    end
+
+    # Update database seat availability
+    reserved_seats.each do |seat|
+      seat_row, column = seat.split('-')
+      column_field = "#{column.downcase}_is_available"
+
+      ActiveRecord::Base.connection.execute(
+        "UPDATE seat_row_reservations SET #{column_field} = 0 WHERE schedule_id = '#{schedule_id}' AND seat_row = #{seat_row}"
+      )
+    end
+
+    [schedule_id, reserved_seats]
+  end
+
+  # Release seats back to Redis when refund occurs
+  def release_seat_reservation(redis_client, reservation)
+    seats = ReservationSeat.where(reservation_id: reservation.id).pluck(:seat)
+    return if seats.empty?
+
+    redis_key = "schedule:#{reservation.schedule_id}:available_seats"
+    redis_client.lpush(redis_key, seats)
+  end
+
   def application_clock
     setting = Setting.first
 
@@ -58,32 +130,9 @@ module Util
     AvailableSeats::LOTS
   end
 
-  def take_lock(schedule_id)
-    retry_count = 10
-    i = 0
+  # Old database-based methods removed - now using Redis-based implementation above
 
-    loop do
-      ReservationLock.create!(schedule_id: schedule_id)
-    rescue ActiveRecord::RecordNotUnique
-      if i >= retry_count
-        puts "Failed to take a lock #{schedule_id} after #{retry_count} retries"
-        return false
-      end
-
-      i += 1
-      sleep 0.1
-    else
-      break
-    end
-
-    true
-  end
-
-  def release_lock(schedule_id)
-    ReservationLock.where(schedule_id: schedule_id).delete_all
-  end
-
-  def pick_seats(schedule_id, from_station_id, to_station_id, num_people)
+  def pick_seats_old(schedule_id, from_station_id, to_station_id, num_people)
     # JA: 乗車区間を考えるのは大変なので、最初から最後まで全部空いているかどうかだけを考える
     # 本当は乗車区間だけステータスを更新したい…
     # EN: Considering the boarding section is difficult, so we only consider whether it is completely empty from the beginning to the end.
@@ -270,21 +319,7 @@ module Util
     schedule.send("departure_at_station_#{from_station_id.downcase}_to_#{next_station.downcase}")
   end
 
-  def release_seat_reservation(reservation)
-    seats = ReservationSeat
-            .where(reservation_id: reservation.id)
-            .pluck(:seat)
-
-    # JA: 今の実装では乗車区間は気にせずに全区間に対して席を取得しているので、全区間に対して席を解放する
-    # EN: In the current implementation, seats are acquired for the entire section without considering the boarding section, so seats are released for the entire section
-    seats.each do |seat|
-      seat_row, column = seat.split('-')
-
-      SeatRowReservation
-        .where(schedule_id: reservation.schedule_id, seat_row: seat_row)
-        .update_all("#{column}_is_available = 1")
-    end
-  end
+  # Old database-based release_seat_reservation removed - now using Redis-based implementation above
 
   def generate_qr_image(entry_token)
     qr = RQRCode::QRCode.new(entry_token, level: :h)
