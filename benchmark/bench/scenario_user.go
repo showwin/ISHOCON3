@@ -166,7 +166,7 @@ func (s *Scenario) RunUserScenario(ctx context.Context) {
 
 	// Start worker to buy tickets
 	ticketScenarioWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
-		s.runBuyTicketScenario(childCtx, agent, user)
+		s.runBuyTicketScenario(childCtx, ctx, agent, user)
 	}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
 	if err != nil {
 		s.log.Error("Failed to create runBuyTicketScenario worker", err.Error(), "user", user.Name)
@@ -234,7 +234,7 @@ func getApplicationClock(initializedAt time.Time) string {
 	return fmt.Sprintf("%02d:%02d", hours, minutes)
 }
 
-func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent, user User) error {
+func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.Context, agent *agent.Agent, user User) error {
 	s.sendInitRequests(ctx, agent, user)
 
 	resp, err := HttpGet(ctx, agent, "/api/schedules")
@@ -318,16 +318,15 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, agent *agent.Agent,
 		s.totalTickets.Add(int64(len(reservation.Seats)))
 		s.totalPurchased.Add(int64(reservation.TotalPrice))
 
-		// Start worker to entry
-		childCtx := context.Background()
-		entryScenarioWorker, err := worker.NewWorker(func(childCtx context.Context, _ int) {
-			s.runEntryScenario(childCtx, user, reservation, purchaseResp.EntryToken, purchaseResp.QRCodeURL)
+		// Start worker to entry (use parent context for cancellation)
+		entryScenarioWorker, err := worker.NewWorker(func(entryCtx context.Context, _ int) {
+			s.runEntryScenario(entryCtx, user, reservation, purchaseResp.EntryToken, purchaseResp.QRCodeURL)
 		}, worker.WithLoopCount(1), worker.WithMaxParallelism(1))
 		if err != nil {
 			s.log.Error("Failed to create entry worker", err.Error(), "user", user.Name)
 		}
 		go func() {
-			entryScenarioWorker.Process(childCtx)
+			entryScenarioWorker.Process(parentCtx)
 		}()
 
 		// Determine the next departure time

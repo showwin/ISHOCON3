@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +49,9 @@ type InitializeResponse struct {
 }
 
 func Run(targetURL string, logLevel string) {
+	// Limit to 4 CPU cores for benchmark consistency
+	runtime.GOMAXPROCS(4)
+
 	rand.New(rand.NewSource(time.Now().UnixNano())) // Seed random number generator
 
 	agent, err := agent.NewAgent(agent.WithBaseURL(targetURL), agent.WithTimeout(10*time.Second), agent.WithDefaultTransport())
@@ -99,6 +103,12 @@ func Run(targetURL string, logLevel string) {
 	currentTimeStr := getApplicationClock(scenario.initializedAt)
 	slog.Info("Benchmark Start!", "current_time", currentTimeStr)
 
+	// Monitor context timeout and log a message
+	go func() {
+		<-ctx.Done()
+		slog.Info("Benchmark timeout reached. Cancelling future HTTP requests...")
+	}()
+
 	// Start admin scenario
 	go scenario.RunAdminScenario(ctx)
 
@@ -110,7 +120,7 @@ func Run(targetURL string, logLevel string) {
 	// 50 => +20
 	// 100 => +20
 	// 200 => +20
-	ticketPhaseWorkerCounts := []int{5, 10, 20, 20, 20}
+	ticketPhaseWorkerCounts := []int{5, 5, 10, 20, 20, 20}
 
 	// Define worker counts per sales phase.
 	// <sales> => <added workers>
@@ -153,7 +163,6 @@ func Run(targetURL string, logLevel string) {
 					"current_time", currentTimeStr,
 					"user", "admin",
 				)
-				time.Sleep(400 * time.Millisecond)
 			}
 			lastTicketPhase.Store(newTicketPhase)
 		}
@@ -170,7 +179,6 @@ func Run(targetURL string, logLevel string) {
 					"current_time", currentTimeStr,
 					"user", "admin",
 				)
-				time.Sleep(400 * time.Millisecond)
 			}
 			lastSalesPhase.Store(newSalesPhase)
 		}
@@ -225,7 +233,7 @@ func Run(targetURL string, logLevel string) {
 
 	score := int64((float64(finalSales) + float64(finalPurchased-finalSales)*0.5 - float64(finalRefunds)) / 100)
 
-	time.Sleep(3 * time.Second) // Wait for slog to flush
+	time.Sleep(10 * time.Second) // Wait for slog to flush
 
 	// Always output final results regardless of log level
 	fmt.Println("\nBenchmark Finished!")

@@ -70,6 +70,7 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 	resp, err := s.enterGate(ctx, EntryReq{EntryToken: entryToken}, user)
 	if err != nil {
 		s.log.Error("Failed to enter", "error", err.Error(), "token", entryToken)
+		return err
 	}
 	currentTimeStr = getApplicationClock(s.initializedAt)
 
