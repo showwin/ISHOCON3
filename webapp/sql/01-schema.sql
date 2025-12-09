@@ -15,7 +15,8 @@ CREATE TABLE `users` (
   `created_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
+ALTER TABLE users add index name_idx(name);
+ALTER TABLE users add index activity_at_idx(last_activity_at);
 
 DROP TABLE IF EXISTS `trains`;
 CREATE TABLE `trains` (
@@ -76,7 +77,7 @@ CREATE TABLE `seat_row_reservations` (
   `e_is_available` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'E席の空き状況',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
+ALTER TABLE seat_row_reservations add index seat_availability_idx(schedule_id, from_station_id, to_station_id);
 
 DROP TABLE IF EXISTS `reservation_locks`;
 CREATE TABLE `reservation_locks` (
@@ -131,7 +132,7 @@ CREATE TABLE `payments` (
   `updated_at` datetime(6) DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '支払い更新日時',
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-
+ALTER TABLE payments add index reservation_id_idx(reservation_id);
 
 DROP TABLE IF EXISTS `entries`;
 CREATE TABLE `entries` (
