@@ -93,7 +93,7 @@ def initialize_schedule_seats(redis_client, schedule: TrainSchedule) -> None:
             text("""
                 SELECT tm.seat_rows, tm.seat_columns
                 FROM train_models tm
-                INNER JOIN trains t ON t.model_name = tm.name
+                INNER JOIN trains t ON t.model = tm.name
                 WHERE t.id = :train_id
                 """),
             {"train_id": schedule.train_id},

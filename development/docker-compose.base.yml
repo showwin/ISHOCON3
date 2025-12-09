@@ -9,31 +9,6 @@ services:
       - "8080:80"
     depends_on:
       - webapp
-<<<<<<< HEAD:development/docker-compose.base.yml
-||||||| parent of a95f53f (Redisをつかって空席を管理 score=2570 total_sales=257000 total_refunds=0 net_revenue=257000 total_tickets=143 ticket_phase=5/5 sales_phase=5/7):development/compose-python.yml
-  webapp:
-    build:
-      context: ../webapp/python
-      dockerfile: ../../development/dockerfiles/Dockerfile.python
-    image: webapp-python
-    expose:
-      - 8080
-    volumes:
-      - ../webapp/sql:/home/ishocon/webapp/sql
-    working_dir: /home/ishocon/webapp/python
-    depends_on:
-      db:
-        condition: service_healthy
-      # payment_app:
-      #   condition: service_healthy
-    environment:
-      ISHOCON_DB_HOST: db
-      ISHOCON_DB_OPTIONS: "--ssl-verify-server-cert=FALSE"
-      ISHOCON_PAYMENT_HOST: payment_app
-      ISHOCON_PAYMENT_PORT: 8080
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-=======
   webapp:
     build:
       context: ../webapp/python
@@ -62,7 +37,6 @@ services:
       ISHOCON_REDIS_PORT: 6379
     extra_hosts:
       - "host.docker.internal:host-gateway"
->>>>>>> a95f53f (Redisをつかって空席を管理 score=2570 total_sales=257000 total_refunds=0 net_revenue=257000 total_tickets=143 ticket_phase=5/5 sales_phase=5/7):development/compose-python.yml
   payment_app:
     build:
       context: ../payment_app/

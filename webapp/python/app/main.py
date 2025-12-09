@@ -1,48 +1,44 @@
+import bcrypt
+import redis
 import subprocess
-from datetime import UTC, datetime, timedelta
-from typing import Annotated
-import os
-from datetime import datetime, timedelta
 from typing import Annotated
 import random
-from http import HTTPStatus
-from typing import Annotated
-
-import bcrypt
-from fastapi import Depends, FastAPI, HTTPException, Response
 import os
+from datetime import datetime, timedelta, timezone
+from http import HTTPStatus
+
+from fastapi import FastAPI, HTTPException, Response, Depends
 from pydantic import BaseModel
-import redis
 from sqlalchemy import text
 from ulid import ULID
 
-from .middlewares import admin_auth_middleware, app_auth_middleware
-from .models import Payment, Reservation, ReservationQrImage, Setting, Station, Train, TrainModel, TrainSchedule, User
-from .payment import capture_payment, payment_app_initialize
+from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment, TrainModel
+from .middlewares import app_auth_middleware, admin_auth_middleware
 from .sql import engine
 from .utils import (
-    add_time,
-    calculate_seat_price,
-    generate_qr_image,
     get_application_clock,
     get_available_seats_sign,
-    get_departure_at,
-    pick_seats,
-    release_lock,
-    release_seat_reservation,
     take_lock,
+    release_lock,
+    pick_seats,
+    calculate_seat_price,
+    get_departure_at,
+    release_seat_reservation,
+    generate_qr_image,
+    add_time,
     update_last_activity_at,
     initialize_schedule_seats,
 )
+from .payment import capture_payment, payment_app_initialize
 
 app = FastAPI()
-redis_host = os.getenv("ISHOCON_REDIS_HOST", "redis")
+redis_host = os.getenv("ISHOCON_REDIS_HOST", "localhost")
 redis_port = int(os.getenv("ISHOCON_REDIS_PORT", "6379"))
 r = redis.Redis(host=redis_host, port=redis_port, db=0)
 
-WAITING_ROOM_CONFIG = {"max_active_users": 150, "polling_interval_ms": 500}
+WAITING_ROOM_CONFIG = {"max_active_users": 150, "polling_interval_ms": 1000}
 
-SESSION_CONFIG = {"idle_timeout_sec": 3, "polling_interval_ms": 500}
+SESSION_CONFIG = {"idle_timeout_sec": 7, "polling_interval_ms": 500}
 
 
 class PostInitializeResponse(BaseModel):
@@ -84,8 +80,7 @@ def post_initialize() -> PostInitializeResponse:
         initialize_schedule_seats(r, schedule)
 
     return PostInitializeResponse(
-        initialized_at=setting.initialized_at.astimezone(UTC),
-        app_language="python",
+        initialized_at=setting.initialized_at.astimezone(timezone.utc), app_language="python"
     )
 
 
@@ -128,10 +123,8 @@ def get_schedules() -> ScheduleResponse:
     current_time = get_application_clock()
     current_hour, current_minute = current_time.split(":")
 
-    # JA: アプリケーションが遅いので予約から入場までのタイムラグを考慮して、2時間後以降のスケジュールを返却している。
-    # 本当はもっと直近のスケジュールを返して、できるだけ早い時間帯に乗車してもらいたい
-    # EN: The application is slow, so we are returning schedules from 2 hours later, taking into account the time lag from reservation to entry.
-    # We really want to return earlier schedules and have users board as soon as possible.
+    # 入場までのタイムラグを考慮して、2時間後以降のスケジュールを取得している。
+    # 本当はもっと直近の予定を返して、できるだけ早い時間帯に乗車してもらいたい
     two_hours_later = f"{(int(current_hour) + 2):02d}:{current_minute}"
 
     with engine.begin() as conn:
@@ -141,11 +134,45 @@ def get_schedules() -> ScheduleResponse:
             FROM train_schedules
             WHERE departure_at_station_a_to_b > :time
             ORDER BY departure_at_station_a_to_b
-            LIMIT 10
+            LIMIT 5
             """),
             {"time": two_hours_later},
         ).fetchall()
-    schedules = [TrainSchedule.model_validate(r) for r in rows]
+    schedules_1 = [TrainSchedule.model_validate(r) for r in rows]
+
+    hours_later_2 = f"{(int(current_hour) + 6):02d}:{current_minute}"
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+            SELECT *
+            FROM train_schedules
+            WHERE departure_at_station_a_to_b > :time
+            ORDER BY departure_at_station_a_to_b
+            LIMIT 3
+            """),
+            {"time": hours_later_2},
+        ).fetchall()
+    schedules_2 = [TrainSchedule.model_validate(r) for r in rows]
+
+    hours_later_3 = f"{(int(current_hour) + 12):02d}:{current_minute}"
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+            SELECT *
+            FROM train_schedules
+            WHERE departure_at_station_a_to_b > :time
+            ORDER BY departure_at_station_a_to_b
+            LIMIT 2
+            """),
+            {"time": hours_later_3},
+        ).fetchall()
+    schedules_3 = [TrainSchedule.model_validate(r) for r in rows]
+
+    schedules = schedules_1 + schedules_2 + schedules_3
+    unique_schedules = {ts.id: ts for ts in schedules}.values()
+    schedules = list(unique_schedules)
 
     trains = []
     for schedule in schedules:
@@ -171,21 +198,6 @@ def get_schedules() -> ScheduleResponse:
         redis_key = f"schedule:{schedule.id}:available_seats"
         available_seats = r.llen(redis_key)
 
-        for stations in available_seats_between_stations.keys():
-            with engine.begin() as conn:
-                row = conn.execute(
-                    text("""
-                        SELECT train_models.seat_rows * train_models.seat_columns AS total_seats
-                        FROM trains
-                        INNER JOIN train_models
-                        ON trains.model_name = train_models.name
-                        WHERE trains.id = :train_id;
-                    """),
-                    {"train_id": train.id},
-                ).fetchone()
-                total_seats = row[0]
-            available_seats_between_stations[stations] = get_available_seats_sign(available_seats, total_seats)
-
         # Get total seats from database
         with engine.begin() as conn:
             row = conn.execute(
@@ -193,7 +205,7 @@ def get_schedules() -> ScheduleResponse:
                     SELECT seat_rows * seat_columns AS total_seats
                     FROM trains
                     INNER JOIN train_models
-                    ON trains.model_name = train_models.name
+                    ON trains.model = train_models.name
                     WHERE id = :train_id;
                 """),
                 {"train_id": train.id},
@@ -263,10 +275,6 @@ class PurchasedTicketsResponse(BaseModel):
 def get_purchased_tickets(
     user: Annotated[User, Depends(app_auth_middleware)],
 ) -> PurchasedTicketsResponse:
-    # JA: このAPIは予約ページのリロード時に呼ばれるので、ユーザはアクティブだと判断してユーザーの最終アクティビティを更新する
-    # EN: This API is called when the reservation page is reloaded, so it determines that the user is active and updates the user's last activity.
-    update_last_activity_at(user.id)
-
     tickets = []
     with engine.begin() as conn:
         rows = conn.execute(
@@ -313,6 +321,9 @@ def get_purchased_tickets(
                 is_entered=r[8],
             )
             tickets.append(ticket)
+
+    # このAPIは画面リロード時に呼ばれるので、ユーザはアクティブだと判断してユーザーの最終アクティビティを更新する
+    update_last_activity_at(user.id)
 
     return PurchasedTicketsResponse(tickets=tickets)
 
@@ -434,46 +445,35 @@ class PostPurchaseResponse(BaseModel):
 def post_purchase(
     user: Annotated[User, Depends(app_auth_middleware)], req: PostPurchaseRequest
 ) -> PostPurchaseResponse:
-    # FIXME:
-    # JA: レコメンドした場合は20%の確率でチケットが購入されないので、その場合このエンドポイントが呼ばれず、予約のロックが残ってしまう。
-    # ただ、それが発生するケースは少ないと信じて一旦放置
-    # EN: If recommended, there is a 20% chance the ticket will not be purchased.
-    # In that case, this endpoint will not be called, leaving the reservation locked.
-    # However, we believe this case is rare and are leaving it as is for now.
-
     update_last_activity_at(user.id)
 
     with engine.begin() as conn:
         row = conn.execute(text("SELECT * FROM reservations WHERE id = :id"), {"id": req.reservation_id}).fetchone()
-    reservation = Reservation.model_validate(row)
+        reservation = Reservation.model_validate(row)
 
-    if reservation.user_id != user.id:
-        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid reservation")
+        if reservation.user_id != user.id:
+            raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid reservation")
 
-    with engine.begin() as conn:
         row = conn.execute(
             text("SELECT * FROM payments WHERE reservation_id = :reservation_id"), {"reservation_id": reservation.id}
         ).fetchone()
-    payment = Payment.model_validate(row)
+        payment = Payment.model_validate(row)
 
     resp = capture_payment(payment.amount, user.global_payment_token)
-    print(resp)
     payment_status = "success" if resp.status == "accepted" else "failed"
 
-    if payment_status == "success":
-        with engine.begin() as conn:
+    with engine.begin() as conn:
+        if payment_status == "success":
             conn.execute(
                 text("UPDATE payments SET is_captured = true WHERE reservation_id = :reservation_id"),
                 {"reservation_id": reservation.id},
             )
-    else:
-        release_seat_reservation(r, reservation)
+        else:
+            release_seat_reservation(r, reservation)
 
-    release_lock(reservation.schedule_id)
+        qr_image = generate_qr_image(reservation.entry_token)
+        image_id = str(ULID())
 
-    qr_image = generate_qr_image(reservation.entry_token)
-    image_id = str(ULID())
-    with engine.begin() as conn:
         conn.execute(
             text("""
                 INSERT INTO reservation_qr_images
@@ -519,8 +519,7 @@ def post_entry(req: PostEntryRequest) -> PostEntryResponse:
 
     reservation = Reservation.model_validate(row)
 
-    # JA: 列車の発車時間を過ぎていないことを確認
-    # EN: Confirm that the train has not departed yet
+    # 列車の発車時間を過ぎていないことを確認
     if reservation.departure_at < get_application_clock():
         return PostEntryResponse(
             status="train_departed",
@@ -592,22 +591,18 @@ class SessionResponse(BaseModel):
 
 @app.get("/api/session")
 def get_session(user: Annotated[User, Depends(app_auth_middleware)], res: Response) -> SessionResponse:
-    # JA: 開発中に短時間でセッションが切れるのは不便なので、ishoconユーザはセッションを切れないようにしておくと便利
-    # EN: During development, it is inconvenient for the session to expire in a short time,
+    # 開発中に短時間でセッションが切れるのは不便なので、ishoconユーザはセッションを切れないようにしておくのがおすすめ
     if user.name == "ishocon":
         return SessionResponse(status="active", next_check=9999999999)
 
-    # JA: `idle_timeout_sec` 秒以上アクティブでないユーザはログアウトさせる
-    # EN: Log out users who have been inactive for more than `idle_timeout_sec` seconds
-    if user.last_activity_at and (
-        user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"]))
-    ):
+    # `idle_timeout_sec` 秒以上アクティブでないユーザはログアウトさせる
+    if user.last_activity_at < (datetime.now() - timedelta(seconds=SESSION_CONFIG["idle_timeout_sec"])):
         res.set_cookie(key="user_name", value=None, httponly=True)
         return SessionResponse(status="session_expired", next_check=SESSION_CONFIG["polling_interval_ms"])
     return SessionResponse(status="active", next_check=SESSION_CONFIG["polling_interval_ms"])
 
 
-## Login Page
+## ログインページ
 
 
 class LoginRequest(BaseModel):
@@ -852,51 +847,6 @@ def post_add_train(req: AddTrainRequest) -> AddTrainResponse:
             text("SELECT * FROM train_schedules WHERE train_id = :train_id"), {"train_id": train.id}
         ).fetchall()
     schedules = [TrainSchedule.model_validate(r) for r in rows]
-
-    with engine.begin() as conn:
-        for schedule in schedules:
-            row = conn.execute(
-                text("SELECT * FROM trains WHERE id = :id"),
-                {"id": schedule.train_id},
-            ).fetchone()
-            train = Train.model_validate(row)
-            row = conn.execute(
-                text("SELECT * FROM train_models WHERE name = :model"),
-                {"model": train.model},
-            ).fetchone()
-            train_model = TrainModel.model_validate(row)
-
-            for i in range(train_model.seat_rows):
-                stations_list = [
-                    ["A", "B"],
-                    ["B", "C"],
-                    ["C", "D"],
-                    ["D", "E"],
-                    ["E", "D"],
-                    ["D", "C"],
-                    ["C", "B"],
-                    ["B", "A"],
-                ]
-                for stations in stations_list:
-                    conn.execute(
-                        text("""
-                            INSERT INTO seat_row_reservations
-                            (train_id, schedule_id, from_station_id, to_station_id, seat_row, a_is_available, b_is_available, c_is_available, d_is_available, e_is_available)
-                            VALUES (:train_id, :schedule_id, :from_station_id, :to_station_id, :seat_row, :a, :b, :c, :d, :e)
-                            """),
-                        {
-                            "train_id": schedule.train_id,
-                            "schedule_id": schedule.id,
-                            "from_station_id": stations[0],
-                            "to_station_id": stations[1],
-                            "seat_row": i + 1,
-                            "a": 1 if train_model.seat_columns >= 1 else 0,
-                            "b": 1 if train_model.seat_columns >= 2 else 0,
-                            "c": 1 if train_model.seat_columns >= 3 else 0,
-                            "d": 1 if train_model.seat_columns >= 4 else 0,
-                            "e": 1 if train_model.seat_columns >= 5 else 0,
-                        },
-                    )
 
     # Initialize Redis counters for each schedule
     for schedule in schedules:
