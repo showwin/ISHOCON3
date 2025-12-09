@@ -126,43 +126,43 @@ def get_schedules() -> ScheduleResponse:
     # 入場までのタイムラグを考慮して、2時間後以降のスケジュールを取得している。
     # 本当はもっと直近の予定を返して、できるだけ早い時間帯に乗車してもらいたい
     two_hours_later = f"{(int(current_hour) + 2):02d}:{current_minute}"
-
     with engine.begin() as conn:
         rows = conn.execute(
             text("""
             SELECT *
             FROM train_schedules
             WHERE departure_at_station_a_to_b > :time
+            AND id not like 'L2%'
             ORDER BY departure_at_station_a_to_b
-            LIMIT 5
+            LIMIT 4
             """),
             {"time": two_hours_later},
         ).fetchall()
     schedules_1 = [TrainSchedule.model_validate(r) for r in rows]
 
     hours_later_2 = f"{(int(current_hour) + 6):02d}:{current_minute}"
-
     with engine.begin() as conn:
         rows = conn.execute(
             text("""
             SELECT *
             FROM train_schedules
             WHERE departure_at_station_a_to_b > :time
+            AND id not like 'L2%'
             ORDER BY departure_at_station_a_to_b
-            LIMIT 3
+            LIMIT 2
             """),
             {"time": hours_later_2},
         ).fetchall()
     schedules_2 = [TrainSchedule.model_validate(r) for r in rows]
 
     hours_later_3 = f"{(int(current_hour) + 12):02d}:{current_minute}"
-
     with engine.begin() as conn:
         rows = conn.execute(
             text("""
             SELECT *
             FROM train_schedules
             WHERE departure_at_station_a_to_b > :time
+            AND id not like 'L2%'
             ORDER BY departure_at_station_a_to_b
             LIMIT 2
             """),
@@ -170,9 +170,36 @@ def get_schedules() -> ScheduleResponse:
         ).fetchall()
     schedules_3 = [TrainSchedule.model_validate(r) for r in rows]
 
-    schedules = schedules_1 + schedules_2 + schedules_3
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+            SELECT *
+            FROM train_schedules
+            WHERE departure_at_station_a_to_b > "19:00"
+            AND departure_at_station_a_to_b < "22:00"
+            AND id not like 'L2%'
+            ORDER BY rand()
+            LIMIT 1
+            """),
+        ).fetchall()
+    schedules_4 = [TrainSchedule.model_validate(r) for r in rows]
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text("""
+            SELECT *
+            FROM train_schedules
+            WHERE departure_at_station_b_to_a > "22:00"
+            AND id not like 'L2%'
+            ORDER BY rand()
+            LIMIT 1
+            """),
+        ).fetchall()
+    schedules_5 = [TrainSchedule.model_validate(r) for r in rows]
+
+    schedules = schedules_1 + schedules_2 + schedules_3 + schedules_4 + schedules_5
     unique_schedules = {ts.id: ts for ts in schedules}.values()
-    schedules = list(unique_schedules)
+    schedules = list(unique_schedules)[:10]
 
     trains = []
     for schedule in schedules:
