@@ -1,14 +1,14 @@
+import math
+import time
 from datetime import datetime
 from enum import Enum
-import time
-import math
 from io import BytesIO
 
 import qrcode
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from .models import BaseModel, Setting, Reservation, SeatRowReservation, TrainSchedule, ReservationSeat
+from .models import BaseModel, Reservation, Setting, TrainSchedule
 from .sql import engine
 
 BASE_TICKET_PRICE = 1000
@@ -198,7 +198,7 @@ def calculate_seat_price(reservation: Reservation, seats: list[str]) -> tuple[in
 
     # JA: 必要以上に席が違う列に分かれてしまっている場合は割引料金
     # EN: If seats are divided into more columns than necessary, a discount applies
-    seat_rows = len(set([s.split("-")[0] for s in seats]))
+    seat_rows = len({s.split("-")[0] for s in seats})
     if seat_rows > allowed_groups:
         print(f"more than allowed groups. {seat_rows} > {allowed_groups} = {num_seats} / {train_seat_columns}. ")
         return discounted_price, True
@@ -232,7 +232,7 @@ def get_departure_at(schedule_id: str, from_station_id: str, to_station_id: str)
 
     with engine.begin() as conn:
         row = conn.execute(
-            text(f"""
+            text("""
                 SELECT * FROM train_schedules WHERE id = :id
                 """),
             {"id": schedule_id}

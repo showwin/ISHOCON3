@@ -1,6 +1,6 @@
 import os
-import requests
 
+import requests
 from pydantic import BaseModel
 
 host = os.getenv("ISHOCON_PAYMENT_HOST", "payment_app")

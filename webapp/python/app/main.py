@@ -1,19 +1,31 @@
-import bcrypt
 import subprocess
-from typing import Annotated
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Response, Depends
+import bcrypt
+from fastapi import Depends, FastAPI, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from ulid import ULID
 
-from .models import Station, User, TrainSchedule, Train, Setting, Reservation, ReservationQrImage, Payment, TrainModel
-from .middlewares import app_auth_middleware, admin_auth_middleware
-from .sql import engine
-from .utils import get_application_clock, get_available_seats_sign, take_lock, release_lock, pick_seats, calculate_seat_price, get_departure_at, release_seat_reservation, generate_qr_image, add_time, update_last_activity_at
+from .middlewares import admin_auth_middleware, app_auth_middleware
+from .models import Payment, Reservation, ReservationQrImage, Setting, Station, Train, TrainModel, TrainSchedule, User
 from .payment import capture_payment, payment_app_initialize
+from .sql import engine
+from .utils import (
+    add_time,
+    calculate_seat_price,
+    generate_qr_image,
+    get_application_clock,
+    get_available_seats_sign,
+    get_departure_at,
+    pick_seats,
+    release_lock,
+    release_seat_reservation,
+    take_lock,
+    update_last_activity_at,
+)
 
 app = FastAPI()
 
@@ -57,7 +69,7 @@ def post_initialize() -> PostInitializeResponse:
         setting = Setting.model_validate(row)
 
     return PostInitializeResponse(
-        initialized_at=setting.initialized_at.astimezone(timezone.utc),
+        initialized_at=setting.initialized_at.astimezone(UTC),
         app_language="python",
     )
 
