@@ -126,11 +126,10 @@ When users visit the site, they request tickets that satisfy their itinerary in 
 For example, if the current time is 2:00,
 they reserve the earliest train departing from Station A at 2:00 or later. If that train departs from Station A at 2:30 and arrives at Station C at 2:50,
 they then search for the earliest train departing from Station C at 4:50 or later and make a reservation. If that train departs from Station C at 5:30 and arrives at Station B at 5:40,
-after a 4-hour break, they attempt to reserve a ticket departing from Station B at 9:40 or later. If the train list obtained from the schedule list does not include any trains departing from Station B at 9:40 or later, they stop reserving at that point.
-They also stop reserving if the departure time exceeds 24:00.
+after a 4-hour break, they attempt to reserve a ticket departing from Station B at 9:40 or later. If the train list obtained from the schedule list does not include any trains departing from Station B at 9:40 or later, they stop any further reservations at that point. In other words, they only purchase tickets for the two segments A-C and C-B.
 
 In this way, they select and reserve the earliest train for each section of the itinerary. If the earliest train is full and sold out, they try to reserve the next train.
-If there are no trains in the obtained train list that meet the conditions, they stop reserving at that point.
+If there are no trains in the obtained train list that meet the conditions, they stop any further reservations at that point.
 The same user may log in again, but in that case, they will try to purchase tickets with a different new itinerary from the previous one.
 
 Regarding the number of tickets purchased, there are diverse users including individual travelers, customers purchasing on behalf of their families, and group tour guides, ranging from 1 to 30 tickets.
@@ -140,15 +139,16 @@ Regarding the number of tickets purchased, there are diverse users including ind
 
 Ticket prices are calculated at the time of reservation. Each segment costs 1000 yen, and the price increases according to the number of segments. For example, purchasing 2 segments from Station A to Station C costs 2000 yen, and purchasing 4 segments from Station A to Station E costs 4000 yen.
 
-However, since ticket purchasers prefer to sit together in the same row as much as possible, if the allocated seats are excessively fragmented, the ticket price will be sold at half price. For example, when reserving 6 tickets for a train schedule with 3 seats per row, if the seats can be secured in 2 rows, it costs the standard 6000 yen per segment, but if they are split across 3 rows, the price becomes 3000 yen.
+However, since group travelers purchasing multiple tickets prefer to sit together in the same row as much as possible, if the allocated seats are excessively fragmented, the ticket price will be sold at half price. For example, when reserving 6 tickets for a train schedule with 3 seats per row, if the seats can be secured in 2 rows, it costs the standard 6000 yen per segment, but if they are split across 3 rows or more, the price becomes 3000 yen.
 
 Seat positions are represented as `number-letter`, where the number represents the row and the letter represents the seat position. For example, in a train with 3 seats wide per row, letters range from `A` to `C`, and `3-A` represents seat A in row 3.
 
-In the above example, seat assignments would be as follows:
-When 6 seats can be secured in 2 rows: `3-A`, `3-B`, `3-C`, `4-A`, `4-B`, `4-C`
-When split across 3 rows: `3-B`, `3-C`, `4-A`, `4-B`, `4-C`, `5-A`
+For example, the price calculation when 6 people reserve on a train with 3 seats per row would be as follows:
+When 6 seats can be secured in 2 rows (sold at 6000 yen per segment): `3-A`, `3-B`, `3-C`, `5-A`, `5-B`, `5-C`
+When split across 3 rows (sold at 3000 yen per segment): `3-B`, `3-C`, `4-A`, `4-B`, `4-C`, `5-A`
+When split across 6 rows (sold at 3000 yen per segment): `3-A`, `4-A`, `5-A`, `6-A`, `7-B`, `8-C`
 
-To maximize revenue, it is necessary to devise a seat allocation algorithm that minimizes seat fragmentation.
+To maximize revenue, it is necessary to devise a seat allocation algorithm that allows the entire group to sit in the same rows as much as possible.
 
 
 ## Ticket Purchase
