@@ -212,21 +212,42 @@ func Run(targetURL string, logLevel string) {
 	finalSalesPhase := currentSalesPhaseIndex.Load()
 	fmt.Printf("\nMain phase finished. Waiting for pending refunds to complete... (current_time: %s)\n", currentTimeStr)
 
-	// Wait for all refund operations to complete
-	refundWg.Wait()
+	// Wait for all refund operations to complete with timeout
+	refundDone := make(chan struct{})
+	go func() {
+		refundWg.Wait()
+		close(refundDone)
+	}()
+
+	refundTimeout := false
+	select {
+	case <-refundDone:
+		// Refunds completed successfully
+	case <-time.After(10 * time.Second):
+		slog.Error("Refund operations timed out after 10 seconds")
+		criticalErrorMessage = "Refund operations timed out"
+		refundTimeout = true
+	}
 
 	// Check if there was a critical error during refund phase
-	select {
-	case critErr := <-criticalError:
-		criticalErrorMessage = critErr.Error()
-		slog.Error("Critical error occurred, stopping benchmark", "error", criticalErrorMessage)
-		panic(critErr)
-	default:
-		// No critical error, proceed with final score
+	if !refundTimeout {
+		select {
+		case critErr := <-criticalError:
+			criticalErrorMessage = critErr.Error()
+			slog.Error("Critical error occurred, stopping benchmark", "error", criticalErrorMessage)
+			panic(critErr)
+		default:
+			// No critical error, proceed with final score
+		}
 	}
 
 	finalRefunds := totalRefunds.Load()
 	score := int64((float64(finalSales) + float64(finalPurchased-finalSales)*0.5 - float64(finalRefunds)) / 100)
+
+	// Set score to 0 if refund timeout occurred
+	if refundTimeout {
+		score = 0
+	}
 
 	time.Sleep(3 * time.Second) // Wait for slog to flush
 

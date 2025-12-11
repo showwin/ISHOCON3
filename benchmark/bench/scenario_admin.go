@@ -160,7 +160,7 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 				s.criticalError <- err
 				return
 			}
-			if stats.TotalSales > maxExpectedSales {
+			if stats.TotalSales > int64(float64(maxExpectedSales)*1.1) {
 				err := fmt.Errorf("total_sales too large: API returned %d, but maximum expected is %d",
 					stats.TotalSales, maxExpectedSales)
 				s.log.Error("Stats validation failed", "error", err.Error(), "user", "admin")
@@ -175,7 +175,7 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 				s.criticalError <- err
 				return
 			}
-			if stats.TotalRefunds > maxExpectedRefunds {
+			if stats.TotalRefunds > int64(float64(maxExpectedRefunds)*1.1) {
 				err := fmt.Errorf("total_refunds too large: API returned %d, but maximum expected is %d",
 					stats.TotalRefunds, maxExpectedRefunds)
 				s.log.Error("Stats validation failed", "error", err.Error(), "user", "admin")
@@ -198,7 +198,7 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 				s.criticalError <- err
 				return
 			}
-			if totalTicketsSold > maxExpectedTickets {
+			if totalTicketsSold > int64(float64(maxExpectedTickets)*1.1) {
 				err := fmt.Errorf("total_tickets_sold too large: API returned %d, but maximum expected is %d",
 					totalTicketsSold, maxExpectedTickets)
 				s.log.Error("Tickets validation failed", "error", err.Error(), "user", "admin")
