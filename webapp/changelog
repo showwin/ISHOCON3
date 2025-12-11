@@ -1,0 +1,34 @@
+1. Use Redis for seat reservation
+
+Key is scheduleID, and value is the list of available seat IDs.
+When reserving a seat, use LPOP to get and remove a seat ID from the list.
+And remove seat reservation logic from the DB transaction.
+
+
+2. Return variety of schedules from /api/schedules
+
+When returning schedules from /api/schedules, return variety of schedules.
+4 from the earliest after 2 hours from now
+2 from the earliest after 6 hours from now
+2 from the earliest after 12 hours from now
+1 from between 19:00 and 22:00
+1 from between 22:00 and 24:00
+
+So buyer can buy whole tickets to complete their itinerary.
+
+3. Waiting room optimization
+
+Increase available users from 5 to 150.
+Reduce interval from 5 seconds to 1 second.
+
+4. Recommendation algorithm improvement
+
+When recommending alternative schedules, recommend the next schedule recursively.
+
+5. Add indices to DB tables
+
+
+6. Implement rate limiter on Nginx for `/api/login`
+
+For Admin to login smoothly, and reduce load on app.
+Block unnecessary login attempts.
