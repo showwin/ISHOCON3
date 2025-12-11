@@ -327,13 +327,22 @@ func (s *Scenario) runBuyTicketScenario(ctx context.Context, parentCtx context.C
 			return nil
 		}
 		s.log.Info("Purchase succeeded", "reservation_id", reservation.ReservationID, "user", user.Name)
-		s.totalTickets.Add(int64(len(reservation.Seats)))
-		s.totalPurchased.Add(int64(reservation.TotalPrice))
+		// Use random shard to reduce contention
+		shard := rand.Intn(32)
+		s.totalTickets[shard].Add(int64(len(reservation.Seats)))
+		s.totalPurchased[shard].Add(int64(reservation.TotalPrice))
 
-		// Track purchased seats for duplicate detection
-		for _, seat := range reservation.Seats {
-			key := fmt.Sprintf("%s|%s", reservation.ScheduleID, seat)
-			s.purchasedSeats.Store(key, true)
+		// Track purchased reservations for double booking detection
+		// Store as "ScheduleID|Seat|FromTo" (e.g., "E2123|A-3|AD")
+		fromStation := stationNameToID(reservation.FromStation)
+		toStation := stationNameToID(reservation.ToStation)
+		fromTo := fromStation + toStation
+
+		for i, seat := range reservation.Seats {
+			reservationKey := fmt.Sprintf("%s|%s|%s", reservation.ScheduleID, seat, fromTo)
+			// Use unique key for each reservation (ReservationID + seat index)
+			uniqueKey := fmt.Sprintf("%s_%d", reservation.ReservationID, i)
+			s.purchasedReservations.Store(uniqueKey, reservationKey)
 		}
 
 		// Start worker to entry (use parent context for cancellation)
@@ -731,4 +740,22 @@ func decideNumPeople(creditAmount int, itinerary *Itinerary) int {
 		}
 	}
 	return int(math.Min(float64(maxNumPeople+1), float64(maxPeople)))
+}
+
+// stationNameToID converts station name to ID (e.g., "Arena" -> "A", "Bridge" -> "B")
+func stationNameToID(stationName string) string {
+	switch stationName {
+	case "Arena":
+		return "A"
+	case "Bridge":
+		return "B"
+	case "Cave":
+		return "C"
+	case "Dock":
+		return "D"
+	case "Edge":
+		return "E"
+	default:
+		return ""
+	}
 }

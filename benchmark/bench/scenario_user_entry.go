@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/isucon/isucandar/agent"
@@ -106,8 +107,9 @@ func (s *Scenario) runEntryScenario(ctx context.Context, user User, reservation 
 		return nil
 	}
 	s.log.Info("Entered the ticket gate", "departure_time", departureAt, "current_time", currentTimeStr, "token", entryToken, "from", reservation.FromStation, "to", reservation.ToStation, "user", user.Name)
-	// Add sales
-	s.totalSales.Add(int64(reservation.TotalPrice))
+	// Add sales (use random shard to reduce contention)
+	shard := rand.Intn(32)
+	s.totalSales[shard].Add(int64(reservation.TotalPrice))
 	s.log.Info("Sales recorded", "amount", reservation.TotalPrice, "user", user.Name)
 
 	return nil
@@ -206,16 +208,18 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 	// Add refund amount if successful
 	if refundResp.Status == "success" {
 		s.log.Info("Refund request succeeded", "user", user.Name)
-		s.totalRefunds.Add(int64(reservation.TotalPrice))
+		// Use random shard to reduce contention
+		shard := rand.Intn(32)
+		s.totalRefunds[shard].Add(int64(reservation.TotalPrice))
 		s.log.Debug("Refund recorded", "amount", reservation.TotalPrice, "user", user.Name)
 
-		// Remove refunded seats from purchased seats tracking
-		for _, seat := range reservation.Seats {
-			key := fmt.Sprintf("%s|%s", reservation.ScheduleID, seat)
-			s.purchasedSeats.Delete(key)
+		// Remove refunded reservations from tracking
+		for i := range reservation.Seats {
+			uniqueKey := fmt.Sprintf("%s_%d", reservation.ReservationID, i)
+			s.purchasedReservations.Delete(uniqueKey)
 		}
 		// Subtract refunded tickets from total tickets
-		s.totalTickets.Add(-int64(len(reservation.Seats)))
+		s.totalTickets[shard].Add(-int64(len(reservation.Seats)))
 	} else {
 		return fmt.Errorf("refund request failed with error_code: %s", refundResp.ErrorCode)
 	}

@@ -104,9 +104,9 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 		case <-ticker.C:
 			// Record current benchmark values to accept 1 second delay in stats update
 			recordTime := time.Now()
-			minExpectedSales := s.totalSales.Load()
-			minExpectedRefunds := s.totalRefunds.Load()
-			minExpectedTickets := s.totalTickets.Load()
+			minExpectedSales := sumShardedCounter(s.totalSales)
+			minExpectedRefunds := sumShardedCounter(s.totalRefunds)
+			minExpectedTickets := sumShardedCounter(s.totalTickets)
 
 			err := s.adminLogin(ctx, agent)
 			if err != nil {
@@ -148,9 +148,9 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			}
 			s.log.Info("GET /api/admin/train_sales", "user", "admin")
 
-			maxExpectedSales := s.totalSales.Load()
-			maxExpectedRefunds := s.totalRefunds.Load()
-			maxExpectedTickets := s.totalTickets.Load()
+			maxExpectedSales := sumShardedCounter(s.totalSales)
+			maxExpectedRefunds := sumShardedCounter(s.totalRefunds)
+			maxExpectedTickets := sumShardedCounter(s.totalTickets)
 
 			// Validate stats: API values should be >= min expected and <= max expected
 			if stats.TotalSales < minExpectedSales {

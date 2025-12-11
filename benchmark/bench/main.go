@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,16 +33,25 @@ type Scenario struct {
 	initializedAt           time.Time
 	appLanguage             string
 	log                     logger.Logger
-	totalSales              *atomic.Int64
-	totalRefunds            *atomic.Int64
-	totalPurchased          *atomic.Int64
-	totalTickets            *atomic.Int64
+	totalSales              *[32]atomic.Int64
+	totalRefunds            *[32]atomic.Int64
+	totalPurchased          *[32]atomic.Int64
+	totalTickets            *[32]atomic.Int64
 	refundWg                *sync.WaitGroup
 	criticalError           chan error
 	currentTicketPhaseIndex *atomic.Int32
 	currentSalesPhaseIndex  *atomic.Int32
 	addWorkersFn            func(ticketPhase, salesPhase int32)
-	purchasedSeats          *sync.Map // key: "scheduleId|seat", value: true
+	purchasedReservations   *sync.Map // key: unique ID, value: "ScheduleID|Seat|FromTo" (e.g., "E2123|A-3|AD")
+}
+
+// sumShardedCounter sums all 32 shards of a counter
+func sumShardedCounter(counter *[32]atomic.Int64) int64 {
+	var total int64
+	for i := 0; i < 32; i++ {
+		total += counter[i].Load()
+	}
+	return total
 }
 
 type InitializeResponse struct {
@@ -75,16 +85,16 @@ func Run(targetURL string, logLevel string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Initialize atomic counters for sales and refunds
-	var totalSales atomic.Int64
-	var totalRefunds atomic.Int64
-	var totalPurchased atomic.Int64
-	var totalTickets atomic.Int64
+	// Initialize sharded atomic counters to reduce contention
+	var totalSales [32]atomic.Int64
+	var totalRefunds [32]atomic.Int64
+	var totalPurchased [32]atomic.Int64
+	var totalTickets [32]atomic.Int64
 	var currentTicketPhaseIndex atomic.Int32
 	var currentSalesPhaseIndex atomic.Int32
 	var refundWg sync.WaitGroup
 	criticalError := make(chan error, 1) // Buffered channel to prevent blocking
-	var purchasedSeats sync.Map
+	var purchasedReservations sync.Map   // Stores "ScheduleID|Seat|FromTo" strings
 
 	log := logger.GetLogger(logLevel)
 	scenario := Scenario{
@@ -100,7 +110,7 @@ func Run(targetURL string, logLevel string) {
 		criticalError:           criticalError,
 		currentTicketPhaseIndex: &currentTicketPhaseIndex,
 		currentSalesPhaseIndex:  &currentSalesPhaseIndex,
-		purchasedSeats:          &purchasedSeats,
+		purchasedReservations:   &purchasedReservations,
 	}
 
 	currentTimeStr := getApplicationClock(scenario.initializedAt)
@@ -205,9 +215,9 @@ func Run(targetURL string, logLevel string) {
 	}
 
 	currentTimeStr = getApplicationClock(scenario.initializedAt)
-	finalSales := totalSales.Load()
-	finalPurchased := totalPurchased.Load()
-	finalTickets := totalTickets.Load()
+	finalSales := sumShardedCounter(&totalSales)
+	finalPurchased := sumShardedCounter(&totalPurchased)
+	finalTickets := sumShardedCounter(&totalTickets)
 	finalTicketPhase := currentTicketPhaseIndex.Load()
 	finalSalesPhase := currentSalesPhaseIndex.Load()
 	fmt.Printf("\nMain phase finished. Waiting for pending refunds to complete... (current_time: %s)\n", currentTimeStr)
@@ -235,13 +245,13 @@ func Run(targetURL string, logLevel string) {
 		case critErr := <-criticalError:
 			criticalErrorMessage = critErr.Error()
 			slog.Error("Critical error occurred, stopping benchmark", "error", criticalErrorMessage)
-			panic(critErr)
+			cancel()
 		default:
 			// No critical error, proceed with final score
 		}
 	}
 
-	finalRefunds := totalRefunds.Load()
+	finalRefunds := sumShardedCounter(&totalRefunds)
 	score := int64((float64(finalSales) + float64(finalPurchased-finalSales)*0.5 - float64(finalRefunds)) / 100)
 
 	// Set score to 0 if refund timeout occurred
@@ -251,17 +261,41 @@ func Run(targetURL string, logLevel string) {
 
 	time.Sleep(3 * time.Second) // Wait for slog to flush
 
-	// Validate no duplicate seats were purchased
-	totalSeats := int64(0)
-	scenario.purchasedSeats.Range(func(key, value interface{}) bool {
-		totalSeats++
+	// Validate no double booking per section
+	// Convert "ScheduleID|Seat|FromTo" to individual sections "ScheduleID|Seat|AB", "ScheduleID|Seat|BC", etc.
+	sectionReservations := make(map[string]bool)
+	duplicateFound := false
+	duplicateSchedule := ""
+	duplicateSeat := ""
+	duplicateSection := ""
+
+	scenario.purchasedReservations.Range(func(key, value interface{}) bool {
+		reservation := value.(string) // e.g., "E2123|A-3|AD"
+		parts := splitReservation(reservation)
+		scheduleID := parts[0]
+		seat := parts[1]
+		fromTo := parts[2]
+
+		// Expand to individual sections
+		sections := expandToSections(fromTo)
+		for _, section := range sections {
+			sectionKey := scheduleID + "|" + seat + "|" + section
+			if sectionReservations[sectionKey] {
+				slog.Error("Double booking detected!", "section_key", sectionKey, "original_reservation", reservation)
+				duplicateFound = true
+				duplicateSchedule = scheduleID
+				duplicateSeat = seat
+				duplicateSection = section
+				return false // Stop iteration
+			}
+			sectionReservations[sectionKey] = true
+		}
 		return true
 	})
 
-	duplicateSeatsFound := totalSeats < finalTickets
-	if criticalErrorMessage == "" && duplicateSeatsFound {
-		slog.Error("Duplicate seat assignments detected!", "total_purchased_seats", finalTickets, "unique_seats", totalSeats)
-		criticalErrorMessage = "Duplicate seat assignments detected"
+	if criticalErrorMessage == "" && duplicateFound {
+		slog.Error("Double booking validation failed!")
+		criticalErrorMessage = fmt.Sprintf("Double booking detected: Schedule %s, Seat %s, Section %s", duplicateSchedule, duplicateSeat, duplicateSection)
 		score = 0
 	}
 
@@ -283,6 +317,46 @@ func Run(targetURL string, logLevel string) {
 	fmt.Printf("  Current Time: %s\n\n", currentTimeStr)
 
 	postScore(score, scenario.appLanguage)
+}
+
+// splitReservation splits "ScheduleID|Seat|FromTo" into parts
+func splitReservation(reservation string) []string {
+	return strings.Split(reservation, "|")
+}
+
+// expandToSections expands "AD" to ["AB", "BC", "CD"]
+func expandToSections(fromTo string) []string {
+	if len(fromTo) != 2 {
+		return []string{}
+	}
+
+	from := fromTo[0]
+	to := fromTo[1]
+
+	// Station order: A, B, C, D, E
+	stations := "ABCDE"
+	fromIdx := strings.IndexByte(stations, from)
+	toIdx := strings.IndexByte(stations, to)
+
+	if fromIdx == -1 || toIdx == -1 {
+		return []string{}
+	}
+
+	// Handle both directions
+	sections := []string{}
+	if fromIdx < toIdx {
+		// Forward direction (e.g., A->D becomes AB, BC, CD)
+		for i := fromIdx; i < toIdx; i++ {
+			sections = append(sections, string(stations[i])+string(stations[i+1]))
+		}
+	} else {
+		// Reverse direction (e.g., D->A becomes DC, CB, BA)
+		for i := fromIdx; i > toIdx; i-- {
+			sections = append(sections, string(stations[i])+string(stations[i-1]))
+		}
+	}
+
+	return sections
 }
 
 func postScore(score int64, appLanguage string) {
