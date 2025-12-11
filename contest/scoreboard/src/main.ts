@@ -246,7 +246,7 @@ function handleTopTeamChange(latestScores: TeamScore[]) {
 }
 
 function renderBarChart(data: TeamScore[]) {
-    const margin = { top: 40, right: 30, bottom: 50, left: 100 };
+    const margin = { top: 40, right: 30, bottom: 50, left: 50 };
     const width = document.body.clientWidth * 0.8 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
@@ -282,7 +282,7 @@ function renderBarChart(data: TeamScore[]) {
 
     const maxYValue = d3.max(latestScores, d => d.score) || 0;
     const x = d3.scaleLinear()
-        .domain([0, maxYValue * 1.1])  // Add 10% padding above the maximum value
+        .domain([0, maxYValue * 1.2])  // Add 30% padding to leave space for team names
         .range([0, width]);
 
     // X-axis
@@ -290,9 +290,9 @@ function renderBarChart(data: TeamScore[]) {
         .attr("transform", `translate(0,${height})`)
         .call(d3.axisBottom(x).tickSize(-height).tickPadding(10));
 
-    // Y-axis
+    // Y-axis without labels (team names will be shown on the right of bars)
     svg.append("g")
-        .call(d3.axisLeft(y).tickSize(-width).tickPadding(10));
+        .call(d3.axisLeft(y).tickSize(-width).tickPadding(10).tickFormat(() => ""));
 
     svg.selectAll(".tick line").attr("stroke", "#ddd").attr("stroke-opacity", 0.3);
 
@@ -321,6 +321,18 @@ function renderBarChart(data: TeamScore[]) {
         .on("mouseout", function () {
             tooltip.style("display", "none");
         });
+
+    // Add team names to the right of each bar
+    svg.selectAll(".label")
+        .data(latestScores)
+        .enter()
+        .append("text")
+        .attr("class", "label")
+        .attr("x", d => x(d.score) + 10)
+        .attr("y", d => y(d.team)! + y.bandwidth() / 2)
+        .attr("dy", "0.35em")
+        .style("fill", "#333")
+        .text(d => d.team);
 }
 
 function showFinalCountdown() {
