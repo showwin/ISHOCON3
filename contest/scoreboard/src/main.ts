@@ -96,19 +96,24 @@ function renderTimeline(data: TeamScore[]) {
         .domain([0, maxYValue * 1.1])  // Add 10% padding above the maximum value
         .range([height, 0]);
 
-    // X-axis with default time format (HH:MM)
+    // X-axis with modern styling
     svg.append("g")
         .attr("transform", `translate(0,${height})`)
-        .call(d3.axisBottom(x).tickSize(-height).tickPadding(10));
+        .call(d3.axisBottom(x).tickSize(-height).tickPadding(10))
+        .call(g => g.select(".domain").attr("stroke", "#e0e0e0").attr("stroke-width", 2))
+        .call(g => g.selectAll(".tick text").attr("fill", "#666").attr("font-size", "12px"));
 
-    // Y-axis with full numbers (no abbreviation)
+    // Y-axis with modern styling
     svg.append("g")
-        .call(d3.axisLeft(y).tickSize(-width).tickPadding(10));
+        .call(d3.axisLeft(y).tickSize(-width).tickPadding(10))
+        .call(g => g.select(".domain").attr("stroke", "#e0e0e0").attr("stroke-width", 2))
+        .call(g => g.selectAll(".tick text").attr("fill", "#666").attr("font-size", "12px"));
 
-    // Lighter grid lines
+    // Modern grid lines
     svg.selectAll(".tick line")
-        .attr("stroke", "#ddd")
-        .attr("stroke-opacity", 0.3);
+        .attr("stroke", "#f0f0f0")
+        .attr("stroke-opacity", 0.7)
+        .attr("stroke-width", 1);
 
     // Line path for each team
     const line = d3.line<TeamScore>()
@@ -119,12 +124,14 @@ function renderTimeline(data: TeamScore[]) {
     const teams = d3.group(data, d => d.team);
 
     teams.forEach((teamData, teamName) => {
-        // Draw the line for each team
+        // Draw the line for each team with modern styling
         svg.append("path")
             .datum(teamData)
             .attr("fill", "none")
             .attr("stroke", colorScale(teamName)!)
-            .attr("stroke-width", 2)
+            .attr("stroke-width", 3)
+            .attr("stroke-linecap", "round")
+            .attr("stroke-linejoin", "round")
             .attr("d", line);
 
         // Find the last data point for the team
@@ -150,7 +157,7 @@ function renderTimeline(data: TeamScore[]) {
         tooltip = d3.select("body").append("div").attr("class", "tooltip-modern tooltip-modern-timeline").style("display", "none");
     }
 
-    // Circles at data points and mouseover event for tooltip (showing only HH:MM:SS)
+    // Circles at data points with modern styling and hover effects
     const timeTooltipFormat = d3.timeFormat("%H:%M:%S");
     svg.selectAll("dot")
         .data(data)
@@ -158,9 +165,16 @@ function renderTimeline(data: TeamScore[]) {
         .append("circle")
         .attr("cx", d => x(new Date(d.timestamp)))
         .attr("cy", d => y(d.score))
-        .attr("r", 5)
+        .attr("r", 6)
         .attr("fill", d => colorScale(d.team)!)
+        .attr("stroke", "#fff")
+        .attr("stroke-width", 2)
+        .style("cursor", "pointer")
+        .style("transition", "all 0.2s ease")
         .on("mouseover", function (event, d) {
+            d3.select(this)
+                .attr("r", 8)
+                .attr("stroke-width", 3);
             const languageInfo = d.language ? `<br>Lang: ${d.language}` : '';
             tooltip.style("display", "block")
                 .html(`Team: ${d.team}<br>Score: ${d.score}${languageInfo}<br>Time: ${timeTooltipFormat(new Date(d.timestamp))}`)
@@ -168,6 +182,9 @@ function renderTimeline(data: TeamScore[]) {
                 .style("top", (event.pageY - 20) + "px");
         })
         .on("mouseout", function () {
+            d3.select(this)
+                .attr("r", 6)
+                .attr("stroke-width", 2);
             tooltip.style("display", "none");
         });
 }
@@ -285,16 +302,23 @@ function renderBarChart(data: TeamScore[]) {
         .domain([0, maxYValue * 1.2])  // Add 30% padding to leave space for team names
         .range([0, width]);
 
-    // X-axis
+    // X-axis with modern styling
     svg.append("g")
         .attr("transform", `translate(0,${height})`)
-        .call(d3.axisBottom(x).tickSize(-height).tickPadding(10));
+        .call(d3.axisBottom(x).tickSize(-height).tickPadding(10))
+        .call(g => g.select(".domain").attr("stroke", "#e0e0e0").attr("stroke-width", 2))
+        .call(g => g.selectAll(".tick text").attr("fill", "#666").attr("font-size", "12px"));
 
     // Y-axis without labels (team names will be shown on the right of bars)
     svg.append("g")
-        .call(d3.axisLeft(y).tickSize(-width).tickPadding(10).tickFormat(() => ""));
+        .call(d3.axisLeft(y).tickSize(-width).tickPadding(10).tickFormat(() => ""))
+        .call(g => g.select(".domain").attr("stroke", "#e0e0e0").attr("stroke-width", 2));
 
-    svg.selectAll(".tick line").attr("stroke", "#ddd").attr("stroke-opacity", 0.3);
+    // Modern grid lines
+    svg.selectAll(".tick line")
+        .attr("stroke", "#f0f0f0")
+        .attr("stroke-opacity", 0.7)
+        .attr("stroke-width", 1);
 
     // Tooltip container (reuse existing or create new)
     let tooltip = d3.select<HTMLDivElement, unknown>("body .tooltip-modern-bar");
@@ -311,7 +335,12 @@ function renderBarChart(data: TeamScore[]) {
         .attr("width", d => x(d.score))
         .attr("height", y.bandwidth())
         .attr("fill", d => colorScale(d.team)!)
+        .attr("rx", 6)
+        .attr("ry", 6)
+        .style("cursor", "pointer")
+        .style("opacity", 0.85)
         .on("mouseover", function (event, d) {
+            d3.select(this).style("opacity", 1);
             const languageInfo = d.language ? `<br>Lang: ${d.language}` : '';
             tooltip.style("display", "block")
                 .html(`Team: ${d.team}<br>Score: ${d.score}${languageInfo}`)
@@ -319,6 +348,7 @@ function renderBarChart(data: TeamScore[]) {
                 .style("top", (event.pageY - 20) + "px");
         })
         .on("mouseout", function () {
+            d3.select(this).style("opacity", 0.85);
             tooltip.style("display", "none");
         });
 
