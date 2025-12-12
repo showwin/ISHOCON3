@@ -172,11 +172,19 @@ func (s *Scenario) runRefundScenario(ctx context.Context, user User, reservation
 		s.log.Error("Failed to create agent", err.Error())
 	}
 
-	s.postLogin(ctx, agent, user)
+	// Use parent context with timeout for login and waiting room
+	err = s.postLogin(ctx, agent, user)
+	if err != nil {
+		return err
+	}
 
-	s.waitInWaitingRoom(ctx, agent, user)
+	err = s.waitInWaitingRoom(ctx, agent, user)
+	if err != nil {
+		return err
+	}
 
-	childCtx, cancel := context.WithCancel(context.Background())
+	// Create child context from parent so it respects the timeout
+	childCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	// Start worker to periodically GET `/api/schedules`

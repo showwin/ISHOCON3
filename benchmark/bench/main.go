@@ -19,7 +19,6 @@ import (
 	"github.com/showwin/ISHOCON3/benchmark/bench/logger"
 
 	"github.com/isucon/isucandar/agent"
-	"github.com/isucon/isucandar/worker"
 )
 
 var jst = time.FixedZone("Asia/Tokyo", 9*60*60)
@@ -43,6 +42,8 @@ type Scenario struct {
 	currentSalesPhaseIndex  *atomic.Int32
 	addWorkersFn            func(ticketPhase, salesPhase int32)
 	purchasedReservations   *sync.Map // key: unique ID, value: "ScheduleID|Seat|FromTo" (e.g., "E2123|A-3|AD")
+	ticketPhaseChans        []chan struct{}
+	salesPhaseChans         []chan struct{}
 }
 
 // sumShardedCounter sums all 32 shards of a counter
@@ -96,6 +97,18 @@ func Run(targetURL string, logLevel string) {
 	criticalError := make(chan error, 1) // Buffered channel to prevent blocking
 	var purchasedReservations sync.Map   // Stores "ScheduleID|Seat|FromTo" strings
 
+	// Phase channels for controlling pre-spawned workers (much faster than flag polling)
+	ticketPhaseChans := make([]chan struct{}, 6)
+	ticketPhaseOnce := make([]sync.Once, 6)
+	for i := range ticketPhaseChans {
+		ticketPhaseChans[i] = make(chan struct{})
+	}
+	salesPhaseChans := make([]chan struct{}, 8)
+	salesPhaseOnce := make([]sync.Once, 8)
+	for i := range salesPhaseChans {
+		salesPhaseChans[i] = make(chan struct{})
+	}
+
 	log := logger.GetLogger(logLevel)
 	scenario := Scenario{
 		targetURL:               targetURL,
@@ -111,6 +124,8 @@ func Run(targetURL string, logLevel string) {
 		currentTicketPhaseIndex: &currentTicketPhaseIndex,
 		currentSalesPhaseIndex:  &currentSalesPhaseIndex,
 		purchasedReservations:   &purchasedReservations,
+		ticketPhaseChans:        ticketPhaseChans,
+		salesPhaseChans:         salesPhaseChans,
 	}
 
 	currentTimeStr := getApplicationClock(scenario.initializedAt)
@@ -141,51 +156,119 @@ func Run(targetURL string, logLevel string) {
 	// 1000000 => +100
 	salesPhaseWorkerCounts := []int{15, 5, 5, 5, 20, 50, 100, 100}
 
-	worker, err := worker.NewWorker(func(ctx context.Context, _ int) {
-		// Run the user scenario
-		scenario.RunUserScenario(ctx)
-	}, worker.WithInfinityLoop(), worker.WithMaxParallelism(int32(salesPhaseWorkerCounts[0]+ticketPhaseWorkerCounts[0])))
-	if err != nil {
-		panic(err)
+	// Calculate total workers needed
+	totalTicketWorkers := 0
+	for _, count := range ticketPhaseWorkerCounts {
+		totalTicketWorkers += count
+	}
+	totalSalesWorkers := 0
+	for _, count := range salesPhaseWorkerCounts {
+		totalSalesWorkers += count
+	}
+	totalWorkers := totalTicketWorkers + totalSalesWorkers
+
+	// Pre-spawn all workers as goroutines
+	workerDone := make(chan struct{})
+	var workersWg sync.WaitGroup
+	workersWg.Add(totalWorkers)
+
+	// Spawn ticket phase workers
+	workerIdx := 0
+	for phaseIdx, count := range ticketPhaseWorkerCounts {
+		for i := 0; i < count; i++ {
+			go func(phase int, phaseChan chan struct{}) {
+				defer workersWg.Done()
+				// Wait until this phase is active (blocks with zero CPU until channel is closed)
+				select {
+				case <-phaseChan:
+					// Phase activated
+				case <-ctx.Done():
+					return
+				}
+				// Run user scenario in a loop until context is done
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						scenario.RunUserScenario(ctx)
+					}
+				}
+			}(phaseIdx, ticketPhaseChans[phaseIdx])
+			workerIdx++
+		}
 	}
 
-	// Define the function to add workers synchronously
+	// Spawn sales phase workers
+	for phaseIdx, count := range salesPhaseWorkerCounts {
+		for i := 0; i < count; i++ {
+			go func(phase int, phaseChan chan struct{}) {
+				defer workersWg.Done()
+				// Wait until this phase is active (blocks with zero CPU until channel is closed)
+				select {
+				case <-phaseChan:
+					// Phase activated
+				case <-ctx.Done():
+					return
+				}
+				// Run user scenario in a loop until context is done
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						scenario.RunUserScenario(ctx)
+					}
+				}
+			}(phaseIdx, salesPhaseChans[phaseIdx])
+			workerIdx++
+		}
+	}
+
+	// Function to activate phase flags
 	var lastTicketPhase atomic.Int32
+	lastTicketPhase.Store(-1)
 	var lastSalesPhase atomic.Int32
+	lastSalesPhase.Store(-1)
 
 	addWorkersFn := func(newTicketPhase, newSalesPhase int32) {
 		oldTicketPhase := lastTicketPhase.Load()
 		oldSalesPhase := lastSalesPhase.Load()
 
-		// Handle ticket phase change
+		// Handle ticket phase change - close channels to activate workers (only once per channel)
 		if newTicketPhase > oldTicketPhase {
 			for phase := oldTicketPhase + 1; phase <= newTicketPhase; phase++ {
-				addedWorkers := ticketPhaseWorkerCounts[phase]
-				worker.AddParallelism(int32(addedWorkers))
-
-				currentTimeStr := getApplicationClock(scenario.initializedAt)
-				log.Info("New ad campaign launched!",
-					"ticket_phase", fmt.Sprintf("%d/%d", phase, len(ticketSoldPhases)),
-					"new_buyers", addedWorkers,
-					"current_time", currentTimeStr,
-					"user", "admin",
-				)
+				p := phase // Capture for closure
+				ticketPhaseOnce[p].Do(func() {
+					close(ticketPhaseChans[p])
+					addedWorkers := ticketPhaseWorkerCounts[p]
+					currentTimeStr := getApplicationClock(scenario.initializedAt)
+					log.Info("New ad campaign launched!",
+						"ticket_phase", fmt.Sprintf("%d/%d", p, len(ticketSoldPhases)),
+						"new_buyers", addedWorkers,
+						"current_time", currentTimeStr,
+						"user", "admin",
+					)
+				})
 			}
 			lastTicketPhase.Store(newTicketPhase)
 		}
 
-		// Handle sales phase change
+		// Handle sales phase change - close channels to activate workers (only once per channel)
 		if newSalesPhase > oldSalesPhase {
 			for phase := oldSalesPhase + 1; phase <= newSalesPhase; phase++ {
-				addedWorkers := salesPhaseWorkerCounts[phase]
-				worker.AddParallelism(int32(addedWorkers))
-				currentTimeStr := getApplicationClock(scenario.initializedAt)
-				log.Info("New ad campaign launched!",
-					"sales_phase", fmt.Sprintf("%d/%d", phase, len(salesPhases)),
-					"new_buyers", addedWorkers,
-					"current_time", currentTimeStr,
-					"user", "admin",
-				)
+				p := phase // Capture for closure
+				salesPhaseOnce[p].Do(func() {
+					close(salesPhaseChans[p])
+					addedWorkers := salesPhaseWorkerCounts[p]
+					currentTimeStr := getApplicationClock(scenario.initializedAt)
+					log.Info("New ad campaign launched!",
+						"sales_phase", fmt.Sprintf("%d/%d", p, len(salesPhases)),
+						"new_buyers", addedWorkers,
+						"current_time", currentTimeStr,
+						"user", "admin",
+					)
+				})
 			}
 			lastSalesPhase.Store(newSalesPhase)
 		}
@@ -193,10 +276,17 @@ func Run(targetURL string, logLevel string) {
 
 	scenario.addWorkersFn = addWorkersFn
 
-	// Run worker in a goroutine so we can handle critical errors
-	workerDone := make(chan struct{})
+	// Activate initial phases (phase 0) by closing channels (using Once to prevent double-close)
+	ticketPhaseOnce[0].Do(func() {
+		close(ticketPhaseChans[0])
+	})
+	salesPhaseOnce[0].Do(func() {
+		close(salesPhaseChans[0])
+	})
+
+	// Monitor for workers completion
 	go func() {
-		worker.Process(ctx)
+		workersWg.Wait()
 		close(workerDone)
 	}()
 
