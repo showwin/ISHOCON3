@@ -110,13 +110,21 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 
 			err := s.adminLogin(ctx, agent)
 			if err != nil {
+				// Ignore errors due to context cancellation (timeout)
+				if ctx.Err() != nil {
+					return
+				}
 				s.criticalError <- fmt.Errorf("failed to login as admin: %w", err)
 				return
 			}
-			s.log.Info("POST /api/login", "user", "admin")
+			s.log.Info("POST /api/admin/login", "user", "admin")
 
 			_, err = s.getTrainModels(ctx, agent)
 			if err != nil {
+				// Ignore errors due to context cancellation (timeout)
+				if ctx.Err() != nil {
+					return
+				}
 				s.criticalError <- fmt.Errorf("failed to get train models: %w", err)
 				return
 			}
@@ -133,6 +141,10 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			stats, err := s.getAdminStats(statsCtx, agent)
 			statsCancel()
 			if err != nil {
+				// Ignore errors due to main context cancellation (timeout)
+				if ctx.Err() != nil {
+					return
+				}
 				s.criticalError <- fmt.Errorf("failed to get admin stats within 2 second: %w", err)
 				return
 			}
@@ -143,6 +155,10 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			trainSales, err := s.getAdminTrainSales(trainSalesCtx, agent)
 			trainSalesCancel()
 			if err != nil {
+				// Ignore errors due to main context cancellation (timeout)
+				if ctx.Err() != nil {
+					return
+				}
 				s.criticalError <- fmt.Errorf("failed to get train sales within 2 second: %w", err)
 				return
 			}
@@ -213,6 +229,10 @@ func (s *Scenario) RunAdminScenario(ctx context.Context) {
 			err = s.registerNewTrains(ctx, agent, totalTicketsSold, stats.TotalSales)
 
 			if err != nil {
+				// Ignore errors due to main context cancellation (timeout)
+				if ctx.Err() != nil {
+					return
+				}
 				s.log.Error("Failed to register trains", "error", err.Error(), "user", "admin")
 				s.criticalError <- fmt.Errorf("train registration failed: %w", err)
 				return
@@ -437,9 +457,9 @@ func (s *Scenario) adminLogin(ctx context.Context, agent *agent.Agent) error {
 		return fmt.Errorf("failed to marshal login request: %w", err)
 	}
 
-	resp, err := HttpPost(ctx, agent, "/api/login", bytes.NewReader(reqBodyBuf))
+	resp, err := HttpPost(ctx, agent, "/api/admin/login", bytes.NewReader(reqBodyBuf))
 	if err != nil {
-		return fmt.Errorf("failed to post /api/login: %w", err)
+		return fmt.Errorf("failed to post /api/admin/login: %w", err)
 	}
 
 	if resp.StatusCode != 200 {
