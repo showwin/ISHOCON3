@@ -437,9 +437,9 @@ function showFinalCountdown() {
 
         // Turn red in the last 10 minutes
         if (remaining <= LAST_10_MIN_MS) {
-            timeEl.style("color", "red");
+            timeEl.style("color", "#FF3838");
         } else {
-            timeEl.style("color", "#111827");
+            timeEl.style("color", "#ffffffff");
         }
     };
 
