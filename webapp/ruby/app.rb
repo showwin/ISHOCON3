@@ -85,7 +85,7 @@ get '/api/schedules' do
   six_hours_later = format('%02d:%02d', (current_hour + 6) % 24, current_minute)
   twelve_hours_later = format('%02d:%02d', (current_hour + 12) % 24, current_minute)
 
-  # Query 1: First available train (within 2 hours)
+  # Query 1: Trains departing 2+ hours later
   query1 = TrainSchedule
            .where('departure_at_station_a_to_b >= ?', two_hours_later)
            .where.not('id LIKE ?', 'L2%')
@@ -106,14 +106,14 @@ get '/api/schedules' do
            .order(:departure_at_station_a_to_b)
            .limit(2)
 
-  # Query 4: Evening trains (18:00-23:59)
+  # Query 4: Trains departing between 19:00-22:00
   query4 = TrainSchedule
            .where('departure_at_station_a_to_b > ? AND departure_at_station_a_to_b < ?', '19:00', '22:00')
            .where.not('id LIKE ?', 'L2%')
            .order("rand()")
            .limit(1)
 
-  # Query 5: Return trains (Edge->Dock departures, which are opposite direction)
+  # Query 5: Trains departing between 22:00-24:00
   query5 = TrainSchedule
            .where('departure_at_station_b_to_a > ?', '22:00')
            .where.not('id LIKE ?', 'L2%')
